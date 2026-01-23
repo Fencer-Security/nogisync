@@ -4,6 +4,7 @@ import click
 from frontmatter import Frontmatter
 
 from nogisync import notion
+from nogisync.provenance import ProvenanceConfig
 
 
 def process_page_hierarchy(client, base_parent_id: str, relative_path: Path) -> str:
@@ -40,7 +41,30 @@ def process_page_hierarchy(client, base_parent_id: str, relative_path: Path) -> 
     type=click.Path(exists=True, file_okay=False, readable=True, resolve_path=True, path_type=Path),
     help="Path to the markdown files",
 )
-def main(token: str, parent_page_id: str, path: Path) -> None:
+@click.option(
+    "--provenance/--no-provenance",
+    default=True,
+    help="Enable/disable provenance callout (default: enabled)",
+)
+@click.option(
+    "--provenance-source-url",
+    type=str,
+    default=None,
+    help="Base URL for source files (e.g., https://github.com/org/repo/blob/main)",
+)
+@click.option(
+    "--provenance-timestamp/--no-provenance-timestamp",
+    default=True,
+    help="Include sync timestamp in provenance (default: enabled)",
+)
+def main(
+    token: str,
+    parent_page_id: str,
+    path: Path,
+    provenance: bool,
+    provenance_source_url: str | None,
+    provenance_timestamp: bool,
+) -> None:
     """
     Sync GitHub markdown files to Notion
     """
@@ -63,15 +87,23 @@ def main(token: str, parent_page_id: str, path: Path) -> None:
         # Process directory hierarchy and get the immediate parent page ID
         immediate_parent_id = process_page_hierarchy(client, parent_page_id, relative_path)
 
+        # Create provenance config for this file
+        provenance_config = ProvenanceConfig.from_environment(
+            enabled=provenance,
+            source_url=provenance_source_url,
+            include_timestamp=provenance_timestamp,
+            file_path=str(relative_path),
+        )
+
         # Check if page exists under its immediate parent
         existing_page = notion.find_notion_page(client, title, parent_id=immediate_parent_id)
 
         if existing_page:
             print(f"Updating existing page: {title}")
-            notion.update_notion_page(client, existing_page["id"], content)
+            notion.update_notion_page(client, existing_page["id"], content, provenance_config)
         else:
             print(f"Creating new page: {title}")
-            notion.create_notion_page(client, immediate_parent_id, title, content)
+            notion.create_notion_page(client, immediate_parent_id, title, content, provenance_config)
 
 
 def get_content(md_file: Path, post: dict) -> str:

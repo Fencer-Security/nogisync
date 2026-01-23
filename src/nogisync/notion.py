@@ -4,6 +4,7 @@ from typing import cast
 import notion_client
 
 from nogisync.markdown import parse_md
+from nogisync.provenance import ProvenanceConfig, create_provenance_block
 
 
 def get_notion_client(token: str) -> notion_client.Client:
@@ -31,10 +32,22 @@ def find_notion_page(client: notion_client.Client, title: str, parent_id: str | 
     return None
 
 
-def create_notion_page(client: notion_client.Client, parent_page_id: str, title: str, content: str) -> dict:
+def create_notion_page(
+    client: notion_client.Client,
+    parent_page_id: str,
+    title: str,
+    content: str,
+    provenance_config: ProvenanceConfig | None = None,
+) -> dict:
     """Create a new page in Notion."""
     try:
         blocks = parse_md(content)
+
+        # Prepend provenance block if enabled and content is non-empty
+        if provenance_config and content:
+            provenance_block = create_provenance_block(provenance_config)
+            if provenance_block:
+                blocks = [provenance_block] + blocks
 
         # Create the page
         new_page = cast(
@@ -59,10 +72,22 @@ def create_notion_page(client: notion_client.Client, parent_page_id: str, title:
         return {}
 
 
-def update_notion_page(client: notion_client.Client, page_id: str, content: str) -> None:
+def update_notion_page(
+    client: notion_client.Client,
+    page_id: str,
+    content: str,
+    provenance_config: ProvenanceConfig | None = None,
+) -> None:
     """Update an existing Notion page."""
     try:
         blocks = parse_md(content)
+
+        # Prepend provenance block if enabled and content is non-empty
+        if provenance_config and content:
+            provenance_block = create_provenance_block(provenance_config)
+            if provenance_block:
+                blocks = [provenance_block] + blocks
+
         # First, delete existing blocks
         existing_blocks = cast(dict, client.blocks.children.list(block_id=page_id)).get("results", [])
         for block in existing_blocks:
