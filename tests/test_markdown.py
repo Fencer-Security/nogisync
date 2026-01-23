@@ -34,6 +34,16 @@ class TestMarkdown(TestCase):
         self.assertIn("Cell 1", result)
         self.assertIn("\\end{array}", result)
 
+    def test_convert_markdown_table_to_latex_single_line(self):
+        # Test table with only one line (no newlines) - should not raise IndexError
+        markdown_table = "| Cell 1 | Cell 2 |"
+        result = convert_markdown_table_to_latex(markdown_table)
+        self.assertIn("\\begin{array}", result)
+        self.assertIn("Cell 1", result)
+        self.assertIn("Cell 2", result)
+        self.assertIn("\\end{array}", result)
+        self.assertNotIn("\\textbf", result)  # No bold headers
+
     def test_parse_markdown_to_notion_blocks_blockquote(self):
         text = "> This is a quote"
         result = parse_markdown_to_notion_blocks(text)
