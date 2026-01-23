@@ -188,7 +188,7 @@ def convert_markdown_table_to_latex(text) -> str:
     split_column = text.split("\n")
     has_header = False
     # Check if the second line is a delimiter
-    if re.match(r"\|\s*-+\s*\|", split_column[1]):
+    if len(split_column) > 1 and re.match(r"\|\s*-+\s*\|", split_column[1]):
         # Remove the delimiter line
         split_column.pop(1)
         has_header = True
