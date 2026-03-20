@@ -44,7 +44,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Notion GitHub Page Sync
-        uses: watchpointlabs/notion-github-page-sync-action@v1
+        uses: fencer-security/notion-github-page-sync-action@v1
         with:
           notion_api_key: ${{ secrets.NOTION_API_KEY }}
           notion_parent_page_id: 'your-parent-page-id'

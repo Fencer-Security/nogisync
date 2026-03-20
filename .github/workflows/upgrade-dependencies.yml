@@ -1,0 +1,65 @@
+---
+name: Upgrade dependencies
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: 0 10 * * THU
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+            - name: Install the latest version of uv
+              uses: astral-sh/setup-uv@c7f87aa956e4c323abf06d5dec078e358f6b4d04 # v6.0.0
+              with:
+                  version: latest
+
+            - name: Upgrade uv versions
+              run: |
+                  # Avoiding potential namespace collisions with uv
+                  export VERSION_OF_UV=$(uv --version | grep -Eo '^uv ([0-9]+\.[0-9]+\.[0-9]+)' | cut -d ' ' -f 2)
+                  export EXISTING_VERSION_OF_UV=$(grep -Eo '^uv ([0-9]+\.[0-9]+\.[0-9]+)' .tool-versions | cut -d ' ' -f 2)
+
+                  echo "VERSION_OF_UV: $VERSION_OF_UV"
+                  echo "EXISTING_VERSION_OF_UV: $EXISTING_VERSION_OF_UV"
+
+                  printf "### Tool versions\n" > update.log
+                  printf -- "- uv: \`%s\`" "$VERSION_OF_UV" >> update.log
+
+                  if [[ "$VERSION_OF_UV" != "$EXISTING_VERSION_OF_UV" ]]; then
+                      printf " (upgrading from \`%s\`)\n\n" "$EXISTING_VERSION_OF_UV" >> update.log
+                  else
+                      printf "\n\n" >> update.log
+                      echo "UV versions match, skipping"
+                      exit 0
+                  fi
+
+                  if ! grep "uv $VERSION_OF_UV" .tool-versions ; then
+                      echo "Upgrading uv version in .tool-versions"
+                      sed -Ei "s/^uv.*/uv $VERSION_OF_UV/" .tool-versions
+                  fi
+            - name: Upgrade Python dependencies
+              run: |
+                  printf "### Upgraded dependencies\n\n\`\`\`\n" >> update.log
+                  uv lock --upgrade 2>&1 | tee -a update.log
+                  prek auto-update --freeze 2>&1 | tee -a update.log
+                  printf "\`\`\`\n" >> update.log
+
+            - name: Create Pull Request
+              uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
+              with:
+                  token: ${{ steps.generate-token.outputs.token }} # https://github.com/peter-evans/create-pull-request/blob/main/docs/concepts-guidelines.md#authenticating-with-github-app-generated-tokens
+                  commit-message: Upgrade dependencies
+                  branch: bot/upgrade-dependencies
+                  delete-branch: true
+                  sign-commits: true
+                  title: "chore: Weekly dependency upgrades"
+                  body-path: update.log
+                  add-paths: |
+                      uv.lock
+                      .pre-commit-config.yaml
+                      .tool-versions
+                  team-reviewers: |
+                      engineering

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://json.schemastore.org/github-action.json
 name: Sync Markdown in Github to Notion
 description: Sync markdown changes in Github to Notion
-author: Watchpoint Labs <hello@watchpointlabs.com>
+author: Fencer Inc <hello@fencer.dev>
 branding:
   color: purple
   icon: book-open
