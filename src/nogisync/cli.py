@@ -1,11 +1,11 @@
 import logging
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import click
 import yaml
-from frontmatter import Frontmatter
 
 from nogisync import notion
 from nogisync.provenance import ProvenanceConfig
@@ -68,7 +68,7 @@ def sync_file(
     logger.info("Started syncing %s", relative_path)
 
     try:
-        post = Frontmatter.read_file(md_file)
+        post = read_frontmatter(md_file)
     except yaml.YAMLError:
         logger.info("No valid frontmatter in %s, treating as plain markdown", md_file.name)
         post = {}
@@ -187,6 +187,21 @@ def main(
 
     elapsed = time.monotonic() - start
     logger.info("Sync complete: %d files in %.1fs (%d failed)", len(markdown_files), elapsed, len(failed))
+
+
+_FRONTMATTER_RE = re.compile(r"^\s*(?:---|\+\+\+)(.*?)(?:---|\+\+\+)\s*(.+)$", re.DOTALL)
+
+
+def read_frontmatter(path: Path) -> dict:
+    """Read a markdown file and split YAML frontmatter from body."""
+    text = path.read_text(encoding="utf-8")
+    match = _FRONTMATTER_RE.search(text)
+    if not match:
+        return {"attributes": None, "body": text}
+    return {
+        "attributes": yaml.load(match.group(1), Loader=yaml.SafeLoader),
+        "body": match.group(2),
+    }
 
 
 def get_content(md_file: Path, post: dict) -> str:
