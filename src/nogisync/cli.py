@@ -1,9 +1,11 @@
 import logging
+import re
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import click
 import yaml
-from frontmatter import Frontmatter
 
 from nogisync import notion
 from nogisync.provenance import ProvenanceConfig
@@ -11,29 +13,87 @@ from nogisync.provenance import ProvenanceConfig
 logger = logging.getLogger(__name__)
 
 
-def process_page_hierarchy(client, base_parent_id: str, relative_path: Path) -> str:
-    """Creates/updates page hierarchy based on directory structure"""
+def process_page_hierarchy(
+    client,
+    base_parent_id: str,
+    relative_path: Path,
+    hierarchy_cache: dict[str, str] | None = None,
+) -> str:
+    """Creates/updates page hierarchy based on directory structure.
+
+    Uses hierarchy_cache to avoid redundant API lookups when multiple files
+    share the same parent directories.
+    """
+    if hierarchy_cache is None:
+        hierarchy_cache = {}
+
     current_parent_id = base_parent_id
     path_parts = relative_path.parts[:-1]  # Exclude the markdown file itself
 
-    for part in path_parts:
-        # Convert directory name to title case (e.g., "foo_lives_here" -> "Foo Lives Here")
-        page_title = " ".join(word.capitalize() for word in part.replace("-", "_").split("_"))
+    for i, part in enumerate(path_parts):
+        cache_key = "/".join(path_parts[: i + 1])
+        if cache_key in hierarchy_cache:
+            current_parent_id = hierarchy_cache[cache_key]
+            continue
 
-        # Check if page exists under current parent
+        page_title = " ".join(word.capitalize() for word in part.replace("-", "_").split("_"))
         existing_page = notion.find_notion_page(client, page_title, parent_id=current_parent_id)
 
         if existing_page:
             current_parent_id = existing_page["id"]
         else:
-            # Create new parent page
             new_page = notion.create_notion_page(client, current_parent_id, page_title, "")
             if new_page:
                 current_parent_id = new_page["id"]
             else:
                 raise Exception(f"Failed to create new parent page: {page_title}")
 
+        hierarchy_cache[cache_key] = current_parent_id
+
     return current_parent_id
+
+
+def sync_file(
+    client,
+    md_file: Path,
+    path: Path,
+    parent_page_id: str,
+    provenance: bool,
+    provenance_source_url: str | None,
+    provenance_timestamp: bool,
+) -> None:
+    """Sync a single markdown file to Notion."""
+    relative_path = md_file.relative_to(path)
+    start = time.monotonic()
+    logger.info("Started syncing %s", relative_path)
+
+    try:
+        post = read_frontmatter(md_file)
+    except yaml.YAMLError:
+        logger.info("No valid frontmatter in %s, treating as plain markdown", md_file.name)
+        post = {}
+
+    title = get_title(md_file, post)
+    content = get_content(md_file, post)
+
+    provenance_config = ProvenanceConfig.from_environment(
+        enabled=provenance,
+        source_url=provenance_source_url,
+        include_timestamp=provenance_timestamp,
+        file_path=str(relative_path),
+    )
+
+    existing_page = notion.find_notion_page(client, title, parent_id=parent_page_id)
+
+    if existing_page:
+        logger.info("Updating existing page: %s", title)
+        notion.update_notion_page(client, existing_page["id"], content, provenance_config)
+    else:
+        logger.info("Creating new page: %s", title)
+        notion.create_notion_page(client, parent_page_id, title, content, provenance_config)
+
+    elapsed = time.monotonic() - start
+    logger.info("Finished syncing %s (%.1fs)", relative_path, elapsed)
 
 
 @click.command()
@@ -61,6 +121,13 @@ def process_page_hierarchy(client, base_parent_id: str, relative_path: Path) -> 
     default=True,
     help="Include sync timestamp in provenance (default: enabled)",
 )
+@click.option(
+    "--workers",
+    "-w",
+    type=int,
+    default=4,
+    help="Number of parallel workers (default: 4)",
+)
 def main(
     token: str,
     parent_page_id: str,
@@ -68,50 +135,73 @@ def main(
     provenance: bool,
     provenance_source_url: str | None,
     provenance_timestamp: bool,
+    workers: int,
 ) -> None:
     """
     Sync GitHub markdown files to Notion
     """
-    # Use rglob to recursively find all markdown files
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
     markdown_files = list(Path(path).rglob("*.md"))
+    logger.info("Found %d markdown files to sync", len(markdown_files))
+    start = time.monotonic()
 
+    client = notion.get_notion_client(token)
+
+    # Pre-resolve directory hierarchies sequentially (they depend on parent IDs)
+    hierarchy_cache: dict[str, str] = {}
     for md_file in markdown_files:
-        # Get relative path from source directory
         relative_path = md_file.relative_to(path)
+        process_page_hierarchy(client, parent_page_id, relative_path, hierarchy_cache)
 
-        # Read the markdown file
-        try:
-            post = Frontmatter.read_file(md_file)
-        except yaml.YAMLError:
-            logger.info("No valid frontmatter in %s, treating as plain markdown", md_file.name)
-            post = {}
-        title = get_title(md_file, post)
-        content = get_content(md_file, post)
+    # Build a map of each file to its resolved parent page ID
+    file_parent_ids: dict[Path, str] = {}
+    for md_file in markdown_files:
+        relative_path = md_file.relative_to(path)
+        dir_key = str(relative_path.parent)
+        file_parent_ids[md_file] = hierarchy_cache.get(dir_key, parent_page_id)
 
-        print(f"Processing {relative_path}...")
+    # Sync files in parallel
+    failed = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {
+            executor.submit(
+                sync_file,
+                client,
+                md_file,
+                path,
+                file_parent_ids[md_file],
+                provenance,
+                provenance_source_url,
+                provenance_timestamp,
+            ): md_file
+            for md_file in markdown_files
+        }
+        for future in as_completed(futures):
+            md_file = futures[future]
+            try:
+                future.result()
+            except Exception:
+                logger.exception("Failed to sync %s", md_file.relative_to(path))
+                failed.append(md_file)
 
-        client = notion.get_notion_client(token)
+    elapsed = time.monotonic() - start
+    logger.info("Sync complete: %d files in %.1fs (%d failed)", len(markdown_files), elapsed, len(failed))
 
-        # Process directory hierarchy and get the immediate parent page ID
-        immediate_parent_id = process_page_hierarchy(client, parent_page_id, relative_path)
 
-        # Create provenance config for this file
-        provenance_config = ProvenanceConfig.from_environment(
-            enabled=provenance,
-            source_url=provenance_source_url,
-            include_timestamp=provenance_timestamp,
-            file_path=str(relative_path),
-        )
+_FRONTMATTER_RE = re.compile(r"^\s*(?:---|\+\+\+)(.*?)(?:---|\+\+\+)\s*(.+)$", re.DOTALL)
 
-        # Check if page exists under its immediate parent
-        existing_page = notion.find_notion_page(client, title, parent_id=immediate_parent_id)
 
-        if existing_page:
-            print(f"Updating existing page: {title}")
-            notion.update_notion_page(client, existing_page["id"], content, provenance_config)
-        else:
-            print(f"Creating new page: {title}")
-            notion.create_notion_page(client, immediate_parent_id, title, content, provenance_config)
+def read_frontmatter(path: Path) -> dict:
+    """Read a markdown file and split YAML frontmatter from body."""
+    text = path.read_text(encoding="utf-8")
+    match = _FRONTMATTER_RE.search(text)
+    if not match:
+        return {"attributes": None, "body": text}
+    return {
+        "attributes": yaml.load(match.group(1), Loader=yaml.SafeLoader),
+        "body": match.group(2),
+    }
 
 
 def get_content(md_file: Path, post: dict) -> str:

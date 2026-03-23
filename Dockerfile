@@ -10,6 +10,6 @@ COPY src/ ./src/
 RUN --mount=type=cache,target=/root/.cache \
     uv sync --locked --no-dev
 
-RUN uv build && uv pip install --system dist/nogisync-*.whl
+ENV PATH="/code/.venv/bin:$PATH"
 
 CMD ["nogisync", "--help"]

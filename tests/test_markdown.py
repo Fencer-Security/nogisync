@@ -2,6 +2,7 @@ import textwrap
 from unittest import TestCase
 
 from nogisync.markdown import (
+    NOTION_MAX_LIST_DEPTH,
     convert_markdown_table_to_latex,
     parse_markdown_to_notion_blocks,
     process_inline_formatting,
@@ -74,6 +75,15 @@ class TestParseBlocks(TestCase):
         self.assertEqual(blocks[0]["code"]["language"], "python")
         self.assertIn("print('hello')", blocks[0]["code"]["rich_text"][0]["text"]["content"])
 
+    def test_code_block_unsupported_language_falls_back_to_plain_text(self):
+        blocks = parse_markdown_to_notion_blocks("```text\nhello\n```")
+        self.assertEqual(blocks[0]["code"]["language"], "plain text")
+
+    def test_code_block_supported_language_preserved(self):
+        for lang in ("mermaid", "sql", "typescript", "yaml"):
+            blocks = parse_markdown_to_notion_blocks(f"```{lang}\ncontent\n```")
+            self.assertEqual(blocks[0]["code"]["language"], lang)
+
     def test_indented_code_flushed_by_regular_line(self):
         result = parse_markdown_to_notion_blocks("    code line\nregular line")
         self.assertEqual(result[0]["type"], "code")
@@ -98,6 +108,14 @@ class TestParseBlocks(TestCase):
         result = parse_markdown_to_notion_blocks("![](https://example.com/image.png)")
         self.assertEqual(result[0]["type"], "image")
         self.assertNotIn("caption", result[0]["image"])
+
+    def test_image_relative_url_becomes_paragraph(self):
+        result = parse_markdown_to_notion_blocks("![diagram](./architecture.png)")
+        self.assertEqual(result[0]["type"], "paragraph")
+
+    def test_image_http_url_accepted(self):
+        result = parse_markdown_to_notion_blocks("![](http://example.com/img.png)")
+        self.assertEqual(result[0]["type"], "image")
 
     def test_empty_lines_filtered(self):
         result = parse_markdown_to_notion_blocks("**bold** \n\n *italic*")
@@ -217,6 +235,35 @@ class TestParseLists(TestCase):
             child = result[i]["bulleted_list_item"]["children"][0]
             self.assertEqual(child["type"], "numbered_list_item")
             self.assertEqual(child["numbered_list_item"]["rich_text"][0]["text"]["content"], child_text)
+
+
+class TestListNestingDepthLimit(TestCase):
+    def test_bulleted_list_capped_at_max_depth(self):
+        lines = []
+        for i in range(NOTION_MAX_LIST_DEPTH + 2):
+            lines.append("  " * i + f"- Level {i}")
+        result = parse_markdown_to_notion_blocks("\n".join(lines))
+
+        # Walk down the nesting to verify depth is capped
+        node = result[0]
+        depth = 1
+        while "children" in node.get("bulleted_list_item", {}):
+            node = node["bulleted_list_item"]["children"][0]
+            depth += 1
+        self.assertLessEqual(depth, NOTION_MAX_LIST_DEPTH)
+
+    def test_numbered_list_capped_at_max_depth(self):
+        lines = []
+        for i in range(NOTION_MAX_LIST_DEPTH + 2):
+            lines.append("  " * i + f"{i + 1}. Level {i}")
+        result = parse_markdown_to_notion_blocks("\n".join(lines))
+
+        node = result[0]
+        depth = 1
+        while "children" in node.get("numbered_list_item", {}):
+            node = node["numbered_list_item"]["children"][0]
+            depth += 1
+        self.assertLessEqual(depth, NOTION_MAX_LIST_DEPTH)
 
 
 class TestNestedListFallback(TestCase):
