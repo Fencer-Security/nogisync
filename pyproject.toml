@@ -75,6 +75,7 @@ branch = true
 plugins = []
 omit = [
   ".venv/*",
+  "tests/*",
 ]
 
 [tool.coverage.paths]

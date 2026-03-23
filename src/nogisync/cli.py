@@ -129,5 +129,6 @@ def get_title(md_file: Path, post: dict) -> str:
         return " ".join(word.capitalize() for word in md_file.stem.replace("-", "_").split("_"))
 
 
-if __name__ == "__main__":
+# Entry point only used when running the module directly, not during tests
+if __name__ == "__main__":  # pragma: no cover
     main()
