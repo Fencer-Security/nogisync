@@ -1,6 +1,103 @@
 import re
 
 NOTION_CONTENT_MAX_LENGTH = 2000
+# Notion API rejects list nesting beyond 3 levels
+NOTION_MAX_LIST_DEPTH = 3
+
+NOTION_SUPPORTED_LANGUAGES = frozenset(
+    {
+        "abap",
+        "abc",
+        "agda",
+        "arduino",
+        "ascii art",
+        "assembly",
+        "bash",
+        "basic",
+        "bnf",
+        "c",
+        "c#",
+        "c++",
+        "clojure",
+        "coffeescript",
+        "coq",
+        "css",
+        "dart",
+        "dhall",
+        "diff",
+        "docker",
+        "ebnf",
+        "elixir",
+        "elm",
+        "erlang",
+        "f#",
+        "flow",
+        "fortran",
+        "gherkin",
+        "glsl",
+        "go",
+        "graphql",
+        "groovy",
+        "haskell",
+        "hcl",
+        "html",
+        "idris",
+        "java",
+        "javascript",
+        "json",
+        "julia",
+        "kotlin",
+        "latex",
+        "less",
+        "lisp",
+        "livescript",
+        "llvm ir",
+        "lua",
+        "makefile",
+        "markdown",
+        "markup",
+        "matlab",
+        "mathematica",
+        "mermaid",
+        "nix",
+        "notion formula",
+        "objective-c",
+        "ocaml",
+        "pascal",
+        "perl",
+        "php",
+        "plain text",
+        "powershell",
+        "prolog",
+        "protobuf",
+        "purescript",
+        "python",
+        "r",
+        "racket",
+        "reason",
+        "ruby",
+        "rust",
+        "sass",
+        "scala",
+        "scheme",
+        "scss",
+        "shell",
+        "smalltalk",
+        "solidity",
+        "sql",
+        "swift",
+        "toml",
+        "typescript",
+        "vb.net",
+        "verilog",
+        "vhdl",
+        "visual basic",
+        "webassembly",
+        "xml",
+        "yaml",
+        "java/c/c++/c#",
+    }
+)
 
 
 def replace_part(parts, pattern, replace_function) -> list:
@@ -247,7 +344,10 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
     def replace_code_blocks(match) -> str:
         index = len(code_blocks)
         language, content = match.group(1), match.group(2)
-        code_blocks[index] = (language or "plain text").strip(), content.strip()
+        language = (language or "plain text").strip().lower()
+        if language not in NOTION_SUPPORTED_LANGUAGES:
+            language = "plain text"
+        code_blocks[index] = language, content.strip()
         return f"CODE_BLOCK_{index}"
 
     # Replace code blocks with placeholders
@@ -316,8 +416,8 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
                 stack.pop()
                 current_indent -= 1
 
-            if indent == current_indent:
-                # Same level of indentation, add to the current level of the stack
+            if indent == current_indent or len(stack) >= NOTION_MAX_LIST_DEPTH:
+                # Same level, or Notion max nesting depth reached — append at current level
                 stack[-1].append(item)
             else:  # indent > current_indent
                 # Nested item, add it as a child of the previous item
@@ -362,8 +462,8 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
                 stack.pop()
                 current_indent -= 1
 
-            if indent == current_indent:
-                # Same level of indentation, add to the current level of the stack
+            if indent == current_indent or len(stack) >= NOTION_MAX_LIST_DEPTH:
+                # Same level, or Notion max nesting depth reached — append at current level
                 stack[-1].append(item)
             else:  # indent > current_indent
                 # Nested item, add it as a child of the previous item
@@ -473,21 +573,32 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
             latex_content = latex_blocks[latex_block_index]
             blocks.append({"type": "equation", "equation": {"expression": latex_content}})
 
-        # Image blocks
+        # Image blocks — Notion only accepts absolute HTTP(S) URLs
         elif image_match:
-            block: dict = {
-                "object": "block",
-                "type": "image",
-                "image": {
-                    "external": {
-                        "url": image_match.group(2),
+            image_url = image_match.group(2)
+            if image_url.startswith(("http://", "https://")):
+                block: dict = {
+                    "object": "block",
+                    "type": "image",
+                    "image": {
+                        "external": {
+                            "url": image_url,
+                        }
+                    },
+                }
+                caption = image_match.group(1)
+                if caption:
+                    block["image"]["caption"] = [{"type": "text", "text": {"content": caption, "link": None}}]
+                blocks.append(block)
+            else:
+                # Relative/invalid URLs can't be used — render as a text paragraph
+                blocks.append(
+                    {
+                        "object": "block",
+                        "type": "paragraph",
+                        "paragraph": {"rich_text": process_inline_formatting(line)},
                     }
-                },
-            }
-            caption = image_match.group(1)
-            if caption:
-                block["image"]["caption"] = [{"type": "text", "text": {"content": caption, "link": None}}]
-            blocks.append(block)
+                )
 
         # Create paragraph blocks for other lines
         elif line.strip():
