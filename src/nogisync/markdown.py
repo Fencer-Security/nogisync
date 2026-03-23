@@ -325,7 +325,10 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
                 elif "numbered_list_item" in previous_parent:
                     previous_parent_list_item_type = "numbered_list_item"
                 else:
-                    raise ValueError("Previous parent is not a list item")
+                    # Previous item is not a list item (e.g., a paragraph from a
+                    # continuation line), so we can't nest. Append at current level.
+                    stack[-1].append(item)
+                    continue
 
                 if "children" not in previous_parent[previous_parent_list_item_type]:
                     previous_parent[previous_parent_list_item_type]["children"] = []
@@ -364,7 +367,10 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
                 elif "numbered_list_item" in previous_parent:
                     previous_parent_list_item_type = "numbered_list_item"
                 else:
-                    raise ValueError("Previous parent is not a list item")
+                    # Previous item is not a list item (e.g., a paragraph from a
+                    # continuation line), so we can't nest. Append at current level.
+                    stack[-1].append(item)
+                    continue
 
                 if "children" not in previous_parent[previous_parent_list_item_type]:
                     previous_parent[previous_parent_list_item_type]["children"] = []
@@ -396,6 +402,11 @@ def parse_markdown_to_notion_blocks(markdown) -> list[dict]:
                 )
                 # Clear the accumulator
                 indented_code_accumulator = []
+
+        # Reset list nesting state when a non-list line is encountered,
+        # so stale state doesn't cause errors when a new list starts later.
+        current_indent = 0
+        stack = [blocks]
 
         # Check for headings and create appropriate heading blocks
         heading_match = re.match(heading_pattern, line)
