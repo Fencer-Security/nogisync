@@ -131,4 +131,4 @@ def create_provenance_markdown(config: ProvenanceConfig) -> str | None:
     if parts is None:
         return None
     content = "\n".join(f"\t{part}" for part in parts)
-    return f'<callout icon="⚠️" color="yellow_background">\n{content}\n</callout>'
+    return f'<callout icon="⚠️" color="yellow_bg">\n{content}\n</callout>'
