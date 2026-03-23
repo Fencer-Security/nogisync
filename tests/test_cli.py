@@ -165,6 +165,53 @@ class TestSyncFile(TestCase):
 
         mock_notion.create_notion_page.assert_called_once()
 
+    @patch("nogisync.cli.notion")
+    def test_creates_new_page_markdown_method(self, mock_notion):
+        mock_notion.find_notion_page.return_value = None
+        mock_notion.create_notion_page_markdown.return_value = {"id": "new-page"}
+        mock_markdown_client = MagicMock()
+
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            sync_file(
+                MagicMock(),
+                Path("docs/test.md"),
+                Path("docs"),
+                "parent-id",
+                True,
+                None,
+                True,
+                sync_method="markdown",
+                markdown_client=mock_markdown_client,
+            )
+
+        mock_notion.create_notion_page_markdown.assert_called_once()
+        mock_notion.create_notion_page.assert_not_called()
+
+    @patch("nogisync.cli.notion")
+    def test_updates_existing_page_markdown_method(self, mock_notion):
+        mock_notion.find_notion_page.return_value = {"id": "existing-page"}
+        mock_markdown_client = MagicMock()
+
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nUpdated content")
+            sync_file(
+                MagicMock(),
+                Path("docs/test.md"),
+                Path("docs"),
+                "parent-id",
+                True,
+                None,
+                True,
+                sync_method="markdown",
+                markdown_client=mock_markdown_client,
+            )
+
+        mock_notion.update_notion_page_markdown.assert_called_once()
+        mock_notion.update_notion_page.assert_not_called()
+
 
 class TestMainFailure(TestCase):
     @patch("nogisync.cli.sync_file", side_effect=RuntimeError("API down"))
@@ -229,6 +276,42 @@ class TestMain(TestCase):
             )
 
         self.assertEqual(result.exit_code, 0)
+
+    @patch("nogisync.cli.notion")
+    def test_with_markdown_sync_method(self, mock_notion):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.get_notion_markdown_client.return_value = MagicMock()
+        mock_notion.find_notion_page.return_value = None
+        mock_notion.create_notion_page_markdown.return_value = {"id": "new-page"}
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            result = runner.invoke(
+                main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs", "--sync-method", "markdown"]
+            )
+
+        self.assertEqual(result.exit_code, 0)
+        mock_notion.get_notion_markdown_client.assert_called_once_with("fake-token")
+        mock_notion.create_notion_page_markdown.assert_called_once()
+        mock_notion.create_notion_page.assert_not_called()
+
+    @patch("nogisync.cli.notion")
+    def test_default_sync_method_is_blocks(self, mock_notion):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.find_notion_page.return_value = None
+        mock_notion.create_notion_page.return_value = {"id": "new-page"}
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
+
+        self.assertEqual(result.exit_code, 0)
+        mock_notion.create_notion_page.assert_called_once()
+        mock_notion.create_notion_page_markdown.assert_not_called()
 
     @patch("nogisync.cli.notion")
     def test_custom_workers(self, mock_notion):

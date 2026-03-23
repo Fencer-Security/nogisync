@@ -91,3 +91,43 @@ def create_provenance_block(config: ProvenanceConfig) -> dict | None:
             "color": "yellow_background",
         },
     }
+
+
+def _build_provenance_message_parts(config: ProvenanceConfig) -> list[str] | None:
+    """Build provenance message parts shared by both block and markdown formats.
+
+    Returns None if provenance is disabled.
+    """
+    if not config.enabled:
+        return None
+
+    message_parts = ["This page is synced from GitHub. Edits will be overwritten."]
+
+    if config.file_path:
+        if config.source_url:
+            full_url = f"{config.source_url.rstrip('/')}/{config.file_path}"
+            if len(full_url) > 1900:
+                full_url = full_url[:1897] + "..."
+            message_parts.append(f"Source: {full_url}")
+        else:
+            source_path = config.file_path
+            if len(source_path) > 1900:
+                source_path = source_path[:1897] + "..."
+            message_parts.append(f"Source: {source_path}")
+
+    if config.include_timestamp:
+        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        message_parts.append(f"Last synced: {timestamp}")
+
+    return message_parts
+
+
+def create_provenance_markdown(config: ProvenanceConfig) -> str | None:
+    """Create a markdown blockquote with provenance information.
+
+    Returns None if provenance is disabled.
+    """
+    parts = _build_provenance_message_parts(config)
+    if parts is None:
+        return None
+    return "\n".join(f"> {part}" for part in parts)

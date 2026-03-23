@@ -58,6 +58,7 @@ jobs:
 | `notion_api_key` | Notion API key for authentication | Yes | - |
 | `notion_parent_page_id` | ID of the parent page in Notion | Yes | - |
 | `docs_path` | Path to directory containing markdown files | No | `.` |
+| `sync_method` | Sync method: `blocks` (convert to Notion blocks) or `markdown` (use Notion markdown API) | No | `blocks` |
 
 ## Example Directory Structure
 

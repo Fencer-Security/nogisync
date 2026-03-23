@@ -61,6 +61,8 @@ def sync_file(
     provenance: bool,
     provenance_source_url: str | None,
     provenance_timestamp: bool,
+    sync_method: str = "blocks",
+    markdown_client=None,
 ) -> None:
     """Sync a single markdown file to Notion."""
     relative_path = md_file.relative_to(path)
@@ -87,10 +89,18 @@ def sync_file(
 
     if existing_page:
         logger.info("Updating existing page: %s", title)
-        notion.update_notion_page(client, existing_page["id"], content, provenance_config)
+        if sync_method == "markdown":
+            notion.update_notion_page_markdown(markdown_client, existing_page["id"], content, provenance_config)
+        else:
+            notion.update_notion_page(client, existing_page["id"], content, provenance_config)
     else:
         logger.info("Creating new page: %s", title)
-        notion.create_notion_page(client, parent_page_id, title, content, provenance_config)
+        if sync_method == "markdown":
+            notion.create_notion_page_markdown(
+                client, markdown_client, parent_page_id, title, content, provenance_config
+            )
+        else:
+            notion.create_notion_page(client, parent_page_id, title, content, provenance_config)
 
     elapsed = time.monotonic() - start
     logger.info("Finished syncing %s (%.1fs)", relative_path, elapsed)
@@ -122,6 +132,12 @@ def sync_file(
     help="Include sync timestamp in provenance (default: enabled)",
 )
 @click.option(
+    "--sync-method",
+    type=click.Choice(["blocks", "markdown"], case_sensitive=False),
+    default="blocks",
+    help="Sync method: 'blocks' (convert to Notion blocks) or 'markdown' (use Notion markdown API)",
+)
+@click.option(
     "--workers",
     "-w",
     type=int,
@@ -135,6 +151,7 @@ def main(
     provenance: bool,
     provenance_source_url: str | None,
     provenance_timestamp: bool,
+    sync_method: str,
     workers: int,
 ) -> None:
     """
@@ -147,6 +164,7 @@ def main(
     start = time.monotonic()
 
     client = notion.get_notion_client(token)
+    markdown_client = notion.get_notion_markdown_client(token) if sync_method == "markdown" else None
 
     # Pre-resolve directory hierarchies sequentially (they depend on parent IDs)
     hierarchy_cache: dict[str, str] = {}
@@ -174,6 +192,8 @@ def main(
                 provenance,
                 provenance_source_url,
                 provenance_timestamp,
+                sync_method,
+                markdown_client,
             ): md_file
             for md_file in markdown_files
         }
