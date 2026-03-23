@@ -59,6 +59,7 @@ jobs:
 | `notion_parent_page_id` | ID of the parent page in Notion | Yes | - |
 | `docs_path` | Path to directory containing markdown files | No | `.` |
 | `sync_method` | Sync method: `blocks` (convert to Notion blocks) or `markdown` (use Notion markdown API) | No | `blocks` |
+| `fail_on_error` | Fail the action if any page fails to sync | No | `false` |
 
 ## Example Directory Structure
 

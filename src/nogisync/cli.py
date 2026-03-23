@@ -138,6 +138,11 @@ def sync_file(
     help="Sync method: 'blocks' (convert to Notion blocks) or 'markdown' (use Notion markdown API)",
 )
 @click.option(
+    "--fail-on-error/--no-fail-on-error",
+    default=False,
+    help="Exit with non-zero status if any page fails to sync (default: disabled)",
+)
+@click.option(
     "--workers",
     "-w",
     type=int,
@@ -152,6 +157,7 @@ def main(
     provenance_source_url: str | None,
     provenance_timestamp: bool,
     sync_method: str,
+    fail_on_error: bool,
     workers: int,
 ) -> None:
     """
@@ -207,6 +213,9 @@ def main(
 
     elapsed = time.monotonic() - start
     logger.info("Sync complete: %d files in %.1fs (%d failed)", len(markdown_files), elapsed, len(failed))
+
+    if failed and fail_on_error:
+        raise SystemExit(1)
 
 
 _FRONTMATTER_RE = re.compile(r"^\s*(?:---|\+\+\+)(.*?)(?:---|\+\+\+)\s*(.+)$", re.DOTALL)

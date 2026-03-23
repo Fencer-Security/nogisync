@@ -229,6 +229,38 @@ class TestMainFailure(TestCase):
         self.assertEqual(result.exit_code, 0)
         mock_sync.assert_called_once()
 
+    @patch("nogisync.cli.sync_file", side_effect=RuntimeError("API down"))
+    @patch("nogisync.cli.process_page_hierarchy")
+    @patch("nogisync.cli.notion")
+    def test_fail_on_error_exits_nonzero(self, mock_notion, mock_hierarchy, mock_sync):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("content")
+            result = runner.invoke(
+                main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs", "--fail-on-error"]
+            )
+
+        self.assertEqual(result.exit_code, 1)
+
+    @patch("nogisync.cli.sync_file", side_effect=RuntimeError("API down"))
+    @patch("nogisync.cli.process_page_hierarchy")
+    @patch("nogisync.cli.notion")
+    def test_no_fail_on_error_exits_zero(self, mock_notion, mock_hierarchy, mock_sync):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("content")
+            result = runner.invoke(
+                main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs", "--no-fail-on-error"]
+            )
+
+        self.assertEqual(result.exit_code, 0)
+
 
 class TestMain(TestCase):
     @patch("nogisync.cli.notion")

@@ -19,6 +19,10 @@ inputs:
     description: "Sync method: 'blocks' (convert to Notion blocks) or 'markdown' (use Notion markdown API)"
     required: false
     default: 'blocks'
+  fail_on_error:
+    description: 'Fail the action if any page fails to sync'
+    required: false
+    default: 'false'
 runs:
   using: 'docker'
   image: 'Dockerfile'
@@ -32,3 +36,4 @@ runs:
     - ${{ inputs.notion_parent_page_id }}
     - "--sync-method"
     - ${{ inputs.sync_method }}
+    - ${{ inputs.fail_on_error == 'true' && '--fail-on-error' || '--no-fail-on-error' }}
