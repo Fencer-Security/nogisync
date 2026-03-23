@@ -264,7 +264,10 @@ class TestCreateNotionPageMarkdown(TestCase):
         self.mock_markdown_client.request.assert_called_once_with(
             path="/pages/new-page-id/markdown",
             method="PATCH",
-            body={"replace_content": "Content"},
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": "Content", "allow_deleting_content": True},
+            },
         )
 
     def test_with_provenance(self):
@@ -273,8 +276,8 @@ class TestCreateNotionPageMarkdown(TestCase):
             self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content", provenance_config=config
         )
         body = self.mock_markdown_client.request.call_args[1]["body"]
-        self.assertIn("> This page is synced from GitHub", body["replace_content"])
-        self.assertTrue(body["replace_content"].endswith("\n\nContent"))
+        self.assertIn("> This page is synced from GitHub", body["replace_content"]["new_str"])
+        self.assertTrue(body["replace_content"]["new_str"].endswith("\n\nContent"))
 
     def test_with_provenance_disabled(self):
         config = ProvenanceConfig(enabled=False, file_path="docs/test.md")
@@ -282,7 +285,7 @@ class TestCreateNotionPageMarkdown(TestCase):
             self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content", provenance_config=config
         )
         body = self.mock_markdown_client.request.call_args[1]["body"]
-        self.assertEqual(body["replace_content"], "Content")
+        self.assertEqual(body["replace_content"]["new_str"], "Content")
 
     def test_returns_empty_dict_on_api_error(self):
         self.mock_client.pages.create.side_effect = make_api_error()
@@ -305,14 +308,17 @@ class TestUpdateNotionPageMarkdown(TestCase):
         self.mock_markdown_client.request.assert_called_once_with(
             path="/pages/page-id/markdown",
             method="PATCH",
-            body={"replace_content": "Updated content"},
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": "Updated content", "allow_deleting_content": True},
+            },
         )
 
     def test_with_provenance(self):
         config = ProvenanceConfig(enabled=True, include_timestamp=False, file_path="docs/test.md")
         update_notion_page_markdown(self.mock_markdown_client, "page-id", "Content", provenance_config=config)
         body = self.mock_markdown_client.request.call_args[1]["body"]
-        self.assertIn("> This page is synced from GitHub", body["replace_content"])
+        self.assertIn("> This page is synced from GitHub", body["replace_content"]["new_str"])
 
     def test_no_block_deletion(self):
         update_notion_page_markdown(self.mock_markdown_client, "page-id", "Content")

@@ -163,7 +163,10 @@ def create_notion_page_markdown(
         markdown_client.request(
             path=f"/pages/{new_page['id']}/markdown",
             method="PATCH",
-            body={"replace_content": markdown_content},
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": markdown_content, "allow_deleting_content": True},
+            },
         )
 
         return cast(dict, new_page)
@@ -188,7 +191,10 @@ def update_notion_page_markdown(
         markdown_client.request(
             path=f"/pages/{page_id}/markdown",
             method="PATCH",
-            body={"replace_content": markdown_content},
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": markdown_content, "allow_deleting_content": True},
+            },
         )
     except notion_client.errors.APIResponseError as e:
         if e.status == 429:
