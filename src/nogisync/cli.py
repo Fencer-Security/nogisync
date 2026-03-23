@@ -1,10 +1,14 @@
+import logging
 from pathlib import Path
 
 import click
+import yaml
 from frontmatter import Frontmatter
 
 from nogisync import notion
 from nogisync.provenance import ProvenanceConfig
+
+logger = logging.getLogger(__name__)
 
 
 def process_page_hierarchy(client, base_parent_id: str, relative_path: Path) -> str:
@@ -76,7 +80,11 @@ def main(
         relative_path = md_file.relative_to(path)
 
         # Read the markdown file
-        post = Frontmatter.read_file(md_file)
+        try:
+            post = Frontmatter.read_file(md_file)
+        except yaml.YAMLError:
+            logger.info("No valid frontmatter in %s, treating as plain markdown", md_file.name)
+            post = {}
         title = get_title(md_file, post)
         content = get_content(md_file, post)
 
