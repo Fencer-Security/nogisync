@@ -1,8 +1,8 @@
 [project]
 name = "nogisync"
 description = "Sync GitHub markdown files to Notion"
-authors = [{ name = "Watchpoint Labs", email = "hello@watchpointlabs.com" }]
-requires-python = "~=3.12.0"
+authors = [{ name = "Fencer Inc", email = "hello@fencer.dev" }]
+requires-python = "~=3.14.0"
 version = "1.0.0"
 dependencies = [
     "notion-client",
@@ -26,7 +26,7 @@ exclude = [".direnv", ".git", ".ruff_cache", "node_modules"]
 
 line-length = 120
 indent-width = 4
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 fixable = ["ALL"]
@@ -63,7 +63,7 @@ default-groups = ["dev"]
 package=true
 
 [tool.uv.pip]
-python = "3.12"
+python = "3.14"
 system = false
 verify-hashes = true
 no-emit-package = ["setuptools"]
@@ -108,7 +108,6 @@ dev = [
   "ipython>=8.30.0",
   "mypy>=1.14.1",
   "pip-tools>=7.4.1",
-  "pre-commit>=4.0.1",
   "pudb>=2024.1.3",
   "pytest-cov>=6.0.0",
   "ruff>=0.8.1",
