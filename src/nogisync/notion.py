@@ -6,6 +6,8 @@ import notion_client
 from nogisync.markdown import parse_md
 from nogisync.provenance import ProvenanceConfig, create_provenance_block
 
+logger = logging.getLogger(__name__)
+
 
 def get_notion_client(token: str) -> notion_client.Client:
     """Get a Notion client."""
@@ -68,7 +70,7 @@ def create_notion_page(
 
         return cast(dict, new_page)
     except notion_client.errors.APIResponseError as e:
-        logging.error(e)
+        logger.error(e)
         return {}
 
 
@@ -100,4 +102,4 @@ def update_notion_page(
 
         client.blocks.children.append(block_id=page_id, children=blocks)
     except notion_client.errors.APIResponseError as e:
-        logging.error(e)
+        logger.error(e)

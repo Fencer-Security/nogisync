@@ -2,11 +2,11 @@
 exclude: ^static/.*|assets/.*|\.min\.js$|\.min\.css$|\.css\.map$|\.min\.js$|\.js\.map$|\.svg$
 default_stages: [pre-commit]
 default_language_version:
-    python: python3.12
+    python: python3.14
 
 repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.9.7
+    rev: e05c5c0818279e5ac248ac9e954431ba58865e61  # frozen: v0.15.7
     hooks:
       - id: ruff
         args: [--fix]
