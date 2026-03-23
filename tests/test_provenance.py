@@ -78,7 +78,7 @@ class TestCreateProvenanceBlock(TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["type"], "callout")
         self.assertEqual(result["callout"]["icon"]["emoji"], "\u26a0\ufe0f")
-        self.assertEqual(result["callout"]["color"], "yellow_bg")
+        self.assertEqual(result["callout"]["color"], "yellow_background")
 
         content = result["callout"]["rich_text"][0]["text"]["content"]
         self.assertIn("This page is synced from GitHub", content)
