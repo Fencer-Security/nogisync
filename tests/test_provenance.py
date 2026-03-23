@@ -2,7 +2,7 @@ import os
 from unittest import TestCase
 from unittest.mock import patch
 
-from nogisync.provenance import ProvenanceConfig, create_provenance_block
+from nogisync.provenance import ProvenanceConfig, create_provenance_block, create_provenance_markdown
 
 
 class TestProvenanceConfig(TestCase):
@@ -160,3 +160,79 @@ class TestCreateProvenanceBlock(TestCase):
         # Should not have double slash
         self.assertIn("main/docs/readme.md", content)
         self.assertNotIn("main//docs", content)
+
+
+class TestCreateProvenanceMarkdown(TestCase):
+    def test_disabled_returns_none(self):
+        config = ProvenanceConfig(enabled=False, file_path="test.md")
+        result = create_provenance_markdown(config)
+        self.assertIsNone(result)
+
+    def test_basic_provenance_markdown(self):
+        config = ProvenanceConfig(
+            enabled=True,
+            include_timestamp=False,
+            file_path="docs/readme.md",
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result.startswith('<callout icon="⚠️" color="yellow_background">'))
+        self.assertTrue(result.endswith("</callout>"))
+        self.assertIn("\tThis page is synced from GitHub. Edits will be overwritten.", result)
+        self.assertIn("\tSource: docs/readme.md", result)
+
+    def test_provenance_markdown_with_source_url(self):
+        config = ProvenanceConfig(
+            enabled=True,
+            source_url="https://github.com/org/repo/blob/main",
+            include_timestamp=False,
+            file_path="docs/readme.md",
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIn("\tSource: https://github.com/org/repo/blob/main/docs/readme.md", result)
+
+    def test_provenance_markdown_with_timestamp(self):
+        config = ProvenanceConfig(
+            enabled=True,
+            include_timestamp=True,
+            file_path="docs/readme.md",
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIn("\tLast synced:", result)
+        self.assertIn("UTC", result)
+
+    def test_provenance_markdown_without_file_path(self):
+        config = ProvenanceConfig(
+            enabled=True,
+            include_timestamp=False,
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIn("\tThis page is synced from GitHub", result)
+        self.assertNotIn("Source:", result)
+
+    def test_long_url_truncation(self):
+        long_path = "a" * 2000
+        config = ProvenanceConfig(
+            enabled=True,
+            source_url="https://github.com/org/repo/blob/main",
+            include_timestamp=False,
+            file_path=long_path,
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIn("...", result)
+
+    def test_long_file_path_truncation(self):
+        long_path = "a" * 2000
+        config = ProvenanceConfig(
+            enabled=True,
+            include_timestamp=False,
+            file_path=long_path,
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIn("...", result)

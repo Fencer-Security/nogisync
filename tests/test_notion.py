@@ -6,12 +6,17 @@ import notion_client.errors
 import stamina
 
 from nogisync.notion import (
+    MARKDOWN_API_VERSION,
     _is_rate_limited,
+    _prepare_markdown_content,
     create_notion_page,
+    create_notion_page_markdown,
     find_notion_page,
     get_notion_client,
+    get_notion_markdown_client,
     get_notion_parent_page,
     update_notion_page,
+    update_notion_page_markdown,
 )
 from nogisync.provenance import ProvenanceConfig
 
@@ -196,3 +201,131 @@ class TestRateLimitRetry(TestCase):
         mock_client.blocks.children.list.side_effect = make_api_error(status=429)
         with self.assertRaises(notion_client.errors.APIResponseError):
             update_notion_page(mock_client, "page-id", "content")
+
+    def test_create_markdown_reraises_429(self):
+        mock_client = MagicMock()
+        mock_markdown_client = MagicMock()
+        mock_client.pages.create.side_effect = make_api_error(status=429)
+        with self.assertRaises(notion_client.errors.APIResponseError):
+            create_notion_page_markdown(mock_client, mock_markdown_client, "parent-id", "Title", "content")
+
+    def test_update_markdown_reraises_429(self):
+        mock_markdown_client = MagicMock()
+        mock_markdown_client.request.side_effect = make_api_error(status=429)
+        with self.assertRaises(notion_client.errors.APIResponseError):
+            update_notion_page_markdown(mock_markdown_client, "page-id", "content")
+
+
+class TestGetNotionMarkdownClient(TestCase):
+    @patch("notion_client.Client")
+    def test_returns_client_with_markdown_version(self, mock_client):
+        client = get_notion_markdown_client("test-token")
+        mock_client.assert_called_once_with(auth="test-token", notion_version=MARKDOWN_API_VERSION)
+        self.assertIsNotNone(client)
+
+
+class TestPrepareMarkdownContent(TestCase):
+    def test_returns_content_without_provenance(self):
+        self.assertEqual(_prepare_markdown_content("Hello"), "Hello")
+
+    def test_returns_content_when_provenance_disabled(self):
+        config = ProvenanceConfig(enabled=False)
+        self.assertEqual(_prepare_markdown_content("Hello", config), "Hello")
+
+    def test_returns_empty_content_unchanged(self):
+        config = ProvenanceConfig(enabled=True, file_path="test.md")
+        self.assertEqual(_prepare_markdown_content("", config), "")
+
+    def test_prepends_provenance(self):
+        config = ProvenanceConfig(enabled=True, include_timestamp=False, file_path="test.md")
+        result = _prepare_markdown_content("Hello", config)
+        self.assertTrue(result.startswith("<callout"))
+        self.assertTrue(result.endswith("\n\nHello"))
+
+
+class TestCreateNotionPageMarkdown(TestCase):
+    def setUp(self):
+        self.mock_client = MagicMock()
+        self.mock_markdown_client = MagicMock()
+        self.mock_client.pages.create.return_value = {"id": "new-page-id"}
+
+    def test_creates_page_and_sets_markdown(self):
+        result = create_notion_page_markdown(
+            self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content"
+        )
+        self.assertEqual(result, {"id": "new-page-id"})
+
+        # Page shell created via standard client
+        call_args = self.mock_client.pages.create.call_args[1]
+        self.assertEqual(call_args["parent"]["page_id"], "parent-id")
+        self.assertEqual(call_args["properties"]["title"][0]["text"]["content"], "Title")
+
+        # Content set via markdown client
+        self.mock_markdown_client.request.assert_called_once_with(
+            path="/pages/new-page-id/markdown",
+            method="PATCH",
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": "Content", "allow_deleting_content": True},
+            },
+        )
+
+    def test_with_provenance(self):
+        config = ProvenanceConfig(enabled=True, include_timestamp=False, file_path="docs/test.md")
+        create_notion_page_markdown(
+            self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content", provenance_config=config
+        )
+        body = self.mock_markdown_client.request.call_args[1]["body"]
+        self.assertIn("\tThis page is synced from GitHub", body["replace_content"]["new_str"])
+        self.assertTrue(body["replace_content"]["new_str"].endswith("\n\nContent"))
+
+    def test_with_provenance_disabled(self):
+        config = ProvenanceConfig(enabled=False, file_path="docs/test.md")
+        create_notion_page_markdown(
+            self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content", provenance_config=config
+        )
+        body = self.mock_markdown_client.request.call_args[1]["body"]
+        self.assertEqual(body["replace_content"]["new_str"], "Content")
+
+    def test_returns_empty_dict_on_api_error(self):
+        self.mock_client.pages.create.side_effect = make_api_error()
+        result = create_notion_page_markdown(
+            self.mock_client, self.mock_markdown_client, "parent-id", "Title", "content"
+        )
+        self.assertEqual(result, {})
+
+    def test_no_blocks_api_calls(self):
+        create_notion_page_markdown(self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content")
+        self.mock_client.blocks.children.append.assert_not_called()
+
+
+class TestUpdateNotionPageMarkdown(TestCase):
+    def setUp(self):
+        self.mock_markdown_client = MagicMock()
+
+    def test_updates_page_via_markdown(self):
+        update_notion_page_markdown(self.mock_markdown_client, "page-id", "Updated content")
+        self.mock_markdown_client.request.assert_called_once_with(
+            path="/pages/page-id/markdown",
+            method="PATCH",
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": "Updated content", "allow_deleting_content": True},
+            },
+        )
+
+    def test_with_provenance(self):
+        config = ProvenanceConfig(enabled=True, include_timestamp=False, file_path="docs/test.md")
+        update_notion_page_markdown(self.mock_markdown_client, "page-id", "Content", provenance_config=config)
+        body = self.mock_markdown_client.request.call_args[1]["body"]
+        self.assertIn("\tThis page is synced from GitHub", body["replace_content"]["new_str"])
+
+    def test_no_block_deletion(self):
+        update_notion_page_markdown(self.mock_markdown_client, "page-id", "Content")
+        # The markdown client should not have blocks operations
+        # Just verify request was called once (the markdown PATCH)
+        self.assertEqual(self.mock_markdown_client.request.call_count, 1)
+
+    def test_handles_api_error(self):
+        self.mock_markdown_client.request.side_effect = make_api_error()
+        update_notion_page_markdown(self.mock_markdown_client, "page-id", "content")

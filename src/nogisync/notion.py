@@ -5,7 +5,7 @@ import notion_client
 import stamina
 
 from nogisync.markdown import parse_md
-from nogisync.provenance import ProvenanceConfig, create_provenance_block
+from nogisync.provenance import ProvenanceConfig, create_provenance_block, create_provenance_markdown
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,17 @@ def _is_rate_limited(error: Exception) -> bool:
     return isinstance(error, notion_client.errors.APIResponseError) and error.status == 429
 
 
+MARKDOWN_API_VERSION = "2026-03-11"
+
+
 def get_notion_client(token: str) -> notion_client.Client:
     """Get a Notion client."""
     return notion_client.Client(auth=token)
+
+
+def get_notion_markdown_client(token: str) -> notion_client.Client:
+    """Get a Notion client configured for the markdown API endpoints."""
+    return notion_client.Client(auth=token, notion_version=MARKDOWN_API_VERSION)
 
 
 def get_notion_parent_page(client: notion_client.Client, parent_page_id: str) -> dict | None:
@@ -114,6 +122,78 @@ def update_notion_page(
             blocks = blocks[100:]
 
         client.blocks.children.append(block_id=page_id, children=blocks)
+    except notion_client.errors.APIResponseError as e:
+        if e.status == 429:
+            raise
+        logger.error(e)
+
+
+def _prepare_markdown_content(content: str, provenance_config: ProvenanceConfig | None = None) -> str:
+    """Prepend provenance as markdown text to the content string."""
+    if not provenance_config or not provenance_config.enabled or not content:
+        return content
+    provenance_text = create_provenance_markdown(provenance_config)
+    return provenance_text + "\n\n" + content if provenance_text else content
+
+
+@stamina.retry(on=_is_rate_limited, attempts=5, wait_initial=1.0, wait_max=30.0)
+def create_notion_page_markdown(
+    client: notion_client.Client,
+    markdown_client: notion_client.Client,
+    parent_page_id: str,
+    title: str,
+    content: str,
+    provenance_config: ProvenanceConfig | None = None,
+) -> dict:
+    """Create a new page in Notion using the markdown API."""
+    try:
+        markdown_content = _prepare_markdown_content(content, provenance_config)
+
+        new_page = cast(
+            dict,
+            client.pages.create(
+                parent={"page_id": parent_page_id},
+                properties={"title": [{"text": {"content": title}}]},
+                children=[],
+            ),
+        )
+
+        markdown_client.request(
+            path=f"/pages/{new_page['id']}/markdown",
+            method="PATCH",
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": markdown_content, "allow_deleting_content": True},
+            },
+        )
+
+        return cast(dict, new_page)
+    except notion_client.errors.APIResponseError as e:
+        if e.status == 429:
+            raise
+        logger.error(e)
+        return {}
+
+
+@stamina.retry(on=_is_rate_limited, attempts=5, wait_initial=1.0, wait_max=30.0)
+def update_notion_page_markdown(
+    markdown_client: notion_client.Client,
+    page_id: str,
+    content: str,
+    provenance_config: ProvenanceConfig | None = None,
+) -> None:
+    """Update an existing Notion page using the markdown API."""
+    try:
+        markdown_content = _prepare_markdown_content(content, provenance_config)
+
+        markdown_client.request(
+            path=f"/pages/{page_id}/markdown",
+            method="PATCH",
+            body={
+                "type": "replace_content",
+                "replace_content": {"new_str": markdown_content, "allow_deleting_content": True},
+            },
+        )
     except notion_client.errors.APIResponseError as e:
         if e.status == 429:
             raise
