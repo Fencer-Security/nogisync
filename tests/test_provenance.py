@@ -78,7 +78,7 @@ class TestCreateProvenanceBlock(TestCase):
         self.assertIsNotNone(result)
         self.assertEqual(result["type"], "callout")
         self.assertEqual(result["callout"]["icon"]["emoji"], "\u26a0\ufe0f")
-        self.assertEqual(result["callout"]["color"], "yellow_background")
+        self.assertEqual(result["callout"]["color"], "yellow_bg")
 
         content = result["callout"]["rich_text"][0]["text"]["content"]
         self.assertIn("This page is synced from GitHub", content)
@@ -177,7 +177,7 @@ class TestCreateProvenanceMarkdown(TestCase):
         result = create_provenance_markdown(config)
 
         self.assertIsNotNone(result)
-        self.assertTrue(result.startswith('<callout icon="⚠️" color="yellow_background">'))
+        self.assertTrue(result.startswith('<callout icon="⚠️" color="yellow_bg">'))
         self.assertTrue(result.endswith("</callout>"))
         self.assertIn("\tThis page is synced from GitHub. Edits will be overwritten.", result)
         self.assertIn("\tSource: docs/readme.md", result)
