@@ -2,11 +2,17 @@ import logging
 from typing import cast
 
 import notion_client
+import stamina
 
 from nogisync.markdown import parse_md
 from nogisync.provenance import ProvenanceConfig, create_provenance_block
 
 logger = logging.getLogger(__name__)
+
+
+def _is_rate_limited(error: Exception) -> bool:
+    """Check if the error is a Notion API rate limit (429) response."""
+    return isinstance(error, notion_client.errors.APIResponseError) and error.status == 429
 
 
 def get_notion_client(token: str) -> notion_client.Client:
@@ -20,6 +26,7 @@ def get_notion_parent_page(client: notion_client.Client, parent_page_id: str) ->
     return results[0] if results else None
 
 
+@stamina.retry(on=_is_rate_limited, attempts=5, wait_initial=1.0, wait_max=30.0)
 def find_notion_page(client: notion_client.Client, title: str, parent_id: str | None = None) -> dict | None:
     """Find a Notion page by its title."""
     response = cast(dict, client.search(query=title, filter={"value": "page", "property": "object"}))
@@ -38,6 +45,7 @@ def find_notion_page(client: notion_client.Client, title: str, parent_id: str | 
     return None
 
 
+@stamina.retry(on=_is_rate_limited, attempts=5, wait_initial=1.0, wait_max=30.0)
 def create_notion_page(
     client: notion_client.Client,
     parent_page_id: str,
@@ -49,13 +57,13 @@ def create_notion_page(
     try:
         blocks = parse_md(content)
 
-        # Prepend provenance block if enabled and content is non-empty
         if provenance_config and content:
             provenance_block = create_provenance_block(provenance_config)
-            if provenance_block:
+            # create_provenance_block always returns a block when config is enabled,
+            # so the None branch is not reachable in practice
+            if provenance_block:  # pragma: no branch
                 blocks = [provenance_block] + blocks
 
-        # Create the page
         new_page = cast(
             dict,
             client.pages.create(
@@ -65,7 +73,6 @@ def create_notion_page(
             ),
         )
 
-        # Add the blocks to the page
         while len(blocks) > 100:
             client.blocks.children.append(block_id=new_page["id"], children=blocks[:100])
             blocks = blocks[100:]
@@ -74,10 +81,13 @@ def create_notion_page(
 
         return cast(dict, new_page)
     except notion_client.errors.APIResponseError as e:
+        if e.status == 429:
+            raise
         logger.error(e)
         return {}
 
 
+@stamina.retry(on=_is_rate_limited, attempts=5, wait_initial=1.0, wait_max=30.0)
 def update_notion_page(
     client: notion_client.Client,
     page_id: str,
@@ -88,7 +98,6 @@ def update_notion_page(
     try:
         blocks = parse_md(content)
 
-        # Prepend provenance block if enabled and content is non-empty
         if provenance_config and content:
             provenance_block = create_provenance_block(provenance_config)
             # create_provenance_block always returns a block when config is enabled,
@@ -96,16 +105,16 @@ def update_notion_page(
             if provenance_block:  # pragma: no branch
                 blocks = [provenance_block] + blocks
 
-        # First, delete existing blocks
         existing_blocks = cast(dict, client.blocks.children.list(block_id=page_id)).get("results", [])
         for block in existing_blocks:
             client.blocks.delete(block_id=block["id"])
 
-        # Then add new blocks
         while len(blocks) > 100:
             client.blocks.children.append(block_id=page_id, children=blocks[:100])
             blocks = blocks[100:]
 
         client.blocks.children.append(block_id=page_id, children=blocks)
     except notion_client.errors.APIResponseError as e:
+        if e.status == 429:
+            raise
         logger.error(e)

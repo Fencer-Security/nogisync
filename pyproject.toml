@@ -7,7 +7,8 @@ version = "1.0.0"
 dependencies = [
     "notion-client",
     "frontmatter",
-    "click"
+    "click",
+    "stamina>=25.2.0",
 ]
 
 [project.scripts]

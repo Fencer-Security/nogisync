@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from click.testing import CliRunner
 
-from nogisync.cli import get_content, get_title, main, process_page_hierarchy
+from nogisync.cli import get_content, get_title, main, process_page_hierarchy, sync_file
 
 
 class TestGetTitle(TestCase):
@@ -81,45 +81,66 @@ class TestProcessPageHierarchy(TestCase):
         with self.assertRaises(Exception, msg="Failed to create new parent page: Dir1"):
             process_page_hierarchy(None, "base_id", Path("dir1/file.md"))
 
+    @patch("nogisync.notion.find_notion_page")
+    def test_uses_cache(self, mock_find_page):
+        mock_find_page.side_effect = lambda client, title, parent_id: {"id": f"existing_{title}"}
+        cache: dict[str, str] = {}
 
-class TestMain(TestCase):
+        process_page_hierarchy(None, "base_id", Path("dir1/file1.md"), cache)
+        self.assertEqual(mock_find_page.call_count, 1)
+
+        process_page_hierarchy(None, "base_id", Path("dir1/file2.md"), cache)
+        self.assertEqual(mock_find_page.call_count, 1)
+
+
+class TestSyncFile(TestCase):
     @patch("nogisync.cli.notion")
     @patch("nogisync.cli.Frontmatter")
     def test_creates_new_page(self, mock_frontmatter, mock_notion):
-        runner = CliRunner()
-        mock_notion.get_notion_client.return_value = MagicMock()
         mock_notion.find_notion_page.return_value = None
         mock_notion.create_notion_page.return_value = {"id": "new-page"}
         mock_frontmatter.read_file.return_value = {
             "attributes": {"title": "Test Doc"},
-            "body": "# Hello\nContent here",
+            "body": "Content",
         }
 
-        with runner.isolated_filesystem():
+        with CliRunner().isolated_filesystem():
             Path("docs").mkdir()
-            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\n# Hello\nContent here")
-            result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
+            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            sync_file(
+                MagicMock(),
+                Path("docs/test.md"),
+                Path("docs"),
+                "parent-id",
+                True,
+                None,
+                True,
+            )
 
-        self.assertEqual(result.exit_code, 0)
         mock_notion.create_notion_page.assert_called_once()
 
     @patch("nogisync.cli.notion")
     @patch("nogisync.cli.Frontmatter")
     def test_updates_existing_page(self, mock_frontmatter, mock_notion):
-        runner = CliRunner()
-        mock_notion.get_notion_client.return_value = MagicMock()
         mock_notion.find_notion_page.return_value = {"id": "existing-page"}
         mock_frontmatter.read_file.return_value = {
             "attributes": {"title": "Test Doc"},
             "body": "Updated content",
         }
 
-        with runner.isolated_filesystem():
+        with CliRunner().isolated_filesystem():
             Path("docs").mkdir()
             Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nUpdated content")
-            result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
+            sync_file(
+                MagicMock(),
+                Path("docs/test.md"),
+                Path("docs"),
+                "parent-id",
+                True,
+                None,
+                True,
+            )
 
-        self.assertEqual(result.exit_code, 0)
         mock_notion.update_notion_page.assert_called_once()
 
     @patch("nogisync.cli.notion")
@@ -127,19 +148,64 @@ class TestMain(TestCase):
     def test_handles_yaml_error(self, mock_frontmatter, mock_notion):
         import yaml
 
-        runner = CliRunner()
-        mock_notion.get_notion_client.return_value = MagicMock()
         mock_notion.find_notion_page.return_value = None
         mock_notion.create_notion_page.return_value = {"id": "new-page"}
         mock_frontmatter.read_file.side_effect = yaml.YAMLError("bad yaml")
 
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("# No frontmatter")
+            sync_file(
+                MagicMock(),
+                Path("docs/test.md"),
+                Path("docs"),
+                "parent-id",
+                True,
+                None,
+                True,
+            )
+
+        mock_notion.create_notion_page.assert_called_once()
+
+
+class TestMainFailure(TestCase):
+    @patch("nogisync.cli.sync_file", side_effect=RuntimeError("API down"))
+    @patch("nogisync.cli.process_page_hierarchy")
+    @patch("nogisync.cli.notion")
+    def test_logs_and_reports_sync_failures(self, mock_notion, mock_hierarchy, mock_sync):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+
         with runner.isolated_filesystem():
             Path("docs").mkdir()
-            Path("docs/test.md").write_text("# No frontmatter\nJust content")
+            Path("docs/test.md").write_text("content")
             result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
 
         self.assertEqual(result.exit_code, 0)
-        mock_notion.create_notion_page.assert_called_once()
+        mock_sync.assert_called_once()
+
+
+class TestMain(TestCase):
+    @patch("nogisync.cli.notion")
+    @patch("nogisync.cli.Frontmatter")
+    def test_syncs_files_in_parallel(self, mock_frontmatter, mock_notion):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.find_notion_page.return_value = None
+        mock_notion.create_notion_page.return_value = {"id": "new-page"}
+        mock_frontmatter.read_file.return_value = {
+            "attributes": {"title": "Test Doc"},
+            "body": "Content",
+        }
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/a.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            Path("docs/b.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(mock_notion.create_notion_page.call_count, 2)
 
     @patch("nogisync.cli.notion")
     @patch("nogisync.cli.Frontmatter")
@@ -178,5 +244,24 @@ class TestMain(TestCase):
             result = runner.invoke(
                 main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs", "--no-provenance"]
             )
+
+        self.assertEqual(result.exit_code, 0)
+
+    @patch("nogisync.cli.notion")
+    @patch("nogisync.cli.Frontmatter")
+    def test_custom_workers(self, mock_frontmatter, mock_notion):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.find_notion_page.return_value = None
+        mock_notion.create_notion_page.return_value = {"id": "new-page"}
+        mock_frontmatter.read_file.return_value = {
+            "attributes": {"title": "Test Doc"},
+            "body": "Content",
+        }
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nContent")
+            result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs", "-w", "2"])
 
         self.assertEqual(result.exit_code, 0)

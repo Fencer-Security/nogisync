@@ -3,8 +3,10 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 import notion_client.errors
+import stamina
 
 from nogisync.notion import (
+    _is_rate_limited,
     create_notion_page,
     find_notion_page,
     get_notion_client,
@@ -13,11 +15,13 @@ from nogisync.notion import (
 )
 from nogisync.provenance import ProvenanceConfig
 
+stamina.set_testing(True)
 
-def make_api_error():
+
+def make_api_error(status: int = 400):
     return notion_client.errors.APIResponseError(
-        code="error",
-        status=400,
+        code="rate_limited" if status == 429 else "error",
+        status=status,
         message="error",
         headers=httpx.Headers(),
         raw_body_text="",
@@ -167,3 +171,28 @@ class TestUpdateNotionPage(TestCase):
     def test_handles_api_error(self):
         self.mock_client.blocks.children.list.side_effect = make_api_error()
         update_notion_page(self.mock_client, "page-id", "content")
+
+
+class TestIsRateLimited(TestCase):
+    def test_returns_true_for_429(self):
+        self.assertTrue(_is_rate_limited(make_api_error(status=429)))
+
+    def test_returns_false_for_other_status(self):
+        self.assertFalse(_is_rate_limited(make_api_error(status=400)))
+
+    def test_returns_false_for_non_api_error(self):
+        self.assertFalse(_is_rate_limited(ValueError("not an API error")))
+
+
+class TestRateLimitRetry(TestCase):
+    def test_create_reraises_429(self):
+        mock_client = MagicMock()
+        mock_client.pages.create.side_effect = make_api_error(status=429)
+        with self.assertRaises(notion_client.errors.APIResponseError):
+            create_notion_page(mock_client, "parent-id", "Title", "content")
+
+    def test_update_reraises_429(self):
+        mock_client = MagicMock()
+        mock_client.blocks.children.list.side_effect = make_api_error(status=429)
+        with self.assertRaises(notion_client.errors.APIResponseError):
+            update_notion_page(mock_client, "page-id", "content")
