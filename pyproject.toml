@@ -5,10 +5,10 @@ authors = [{ name = "Fencer Inc", email = "hello@fencer.dev" }]
 requires-python = "~=3.14.0"
 version = "1.0.0"
 dependencies = [
-    "notion-client",
-    "frontmatter",
-    "click",
-    "stamina>=25.2.0",
+    "notion-client>=3,<4",
+    "frontmatter>=3,<4",
+    "click>=8,<9",
+    "stamina>=25.2,<26",
 ]
 
 [project.scripts]
