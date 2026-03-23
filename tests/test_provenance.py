@@ -177,10 +177,10 @@ class TestCreateProvenanceMarkdown(TestCase):
         result = create_provenance_markdown(config)
 
         self.assertIsNotNone(result)
-        lines = result.split("\n")
-        self.assertTrue(all(line.startswith("> ") for line in lines))
-        self.assertIn("> This page is synced from GitHub. Edits will be overwritten.", result)
-        self.assertIn("> Source: docs/readme.md", result)
+        self.assertTrue(result.startswith('<callout icon="⚠️" color="yellow_background">'))
+        self.assertTrue(result.endswith("</callout>"))
+        self.assertIn("\tThis page is synced from GitHub. Edits will be overwritten.", result)
+        self.assertIn("\tSource: docs/readme.md", result)
 
     def test_provenance_markdown_with_source_url(self):
         config = ProvenanceConfig(
@@ -191,7 +191,7 @@ class TestCreateProvenanceMarkdown(TestCase):
         )
         result = create_provenance_markdown(config)
 
-        self.assertIn("> Source: https://github.com/org/repo/blob/main/docs/readme.md", result)
+        self.assertIn("\tSource: https://github.com/org/repo/blob/main/docs/readme.md", result)
 
     def test_provenance_markdown_with_timestamp(self):
         config = ProvenanceConfig(
@@ -201,7 +201,7 @@ class TestCreateProvenanceMarkdown(TestCase):
         )
         result = create_provenance_markdown(config)
 
-        self.assertIn("> Last synced:", result)
+        self.assertIn("\tLast synced:", result)
         self.assertIn("UTC", result)
 
     def test_provenance_markdown_without_file_path(self):
@@ -211,7 +211,7 @@ class TestCreateProvenanceMarkdown(TestCase):
         )
         result = create_provenance_markdown(config)
 
-        self.assertIn("> This page is synced from GitHub", result)
+        self.assertIn("\tThis page is synced from GitHub", result)
         self.assertNotIn("Source:", result)
 
     def test_long_url_truncation(self):
@@ -219,6 +219,17 @@ class TestCreateProvenanceMarkdown(TestCase):
         config = ProvenanceConfig(
             enabled=True,
             source_url="https://github.com/org/repo/blob/main",
+            include_timestamp=False,
+            file_path=long_path,
+        )
+        result = create_provenance_markdown(config)
+
+        self.assertIn("...", result)
+
+    def test_long_file_path_truncation(self):
+        long_path = "a" * 2000
+        config = ProvenanceConfig(
+            enabled=True,
             include_timestamp=False,
             file_path=long_path,
         )

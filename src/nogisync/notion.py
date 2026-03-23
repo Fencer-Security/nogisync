@@ -133,9 +133,7 @@ def _prepare_markdown_content(content: str, provenance_config: ProvenanceConfig 
     if not provenance_config or not provenance_config.enabled or not content:
         return content
     provenance_text = create_provenance_markdown(provenance_config)
-    if provenance_text:
-        return provenance_text + "\n\n" + content
-    return content
+    return provenance_text + "\n\n" + content if provenance_text else content
 
 
 @stamina.retry(on=_is_rate_limited, attempts=5, wait_initial=1.0, wait_max=30.0)

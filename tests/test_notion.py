@@ -239,7 +239,7 @@ class TestPrepareMarkdownContent(TestCase):
     def test_prepends_provenance(self):
         config = ProvenanceConfig(enabled=True, include_timestamp=False, file_path="test.md")
         result = _prepare_markdown_content("Hello", config)
-        self.assertTrue(result.startswith("> "))
+        self.assertTrue(result.startswith("<callout"))
         self.assertTrue(result.endswith("\n\nHello"))
 
 
@@ -276,7 +276,7 @@ class TestCreateNotionPageMarkdown(TestCase):
             self.mock_client, self.mock_markdown_client, "parent-id", "Title", "Content", provenance_config=config
         )
         body = self.mock_markdown_client.request.call_args[1]["body"]
-        self.assertIn("> This page is synced from GitHub", body["replace_content"]["new_str"])
+        self.assertIn("\tThis page is synced from GitHub", body["replace_content"]["new_str"])
         self.assertTrue(body["replace_content"]["new_str"].endswith("\n\nContent"))
 
     def test_with_provenance_disabled(self):
@@ -318,7 +318,7 @@ class TestUpdateNotionPageMarkdown(TestCase):
         config = ProvenanceConfig(enabled=True, include_timestamp=False, file_path="docs/test.md")
         update_notion_page_markdown(self.mock_markdown_client, "page-id", "Content", provenance_config=config)
         body = self.mock_markdown_client.request.call_args[1]["body"]
-        self.assertIn("> This page is synced from GitHub", body["replace_content"]["new_str"])
+        self.assertIn("\tThis page is synced from GitHub", body["replace_content"]["new_str"])
 
     def test_no_block_deletion(self):
         update_notion_page_markdown(self.mock_markdown_client, "page-id", "Content")

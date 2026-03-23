@@ -123,11 +123,12 @@ def _build_provenance_message_parts(config: ProvenanceConfig) -> list[str] | Non
 
 
 def create_provenance_markdown(config: ProvenanceConfig) -> str | None:
-    """Create a markdown blockquote with provenance information.
+    """Create an enhanced markdown callout with provenance information.
 
     Returns None if provenance is disabled.
     """
     parts = _build_provenance_message_parts(config)
     if parts is None:
         return None
-    return "\n".join(f"> {part}" for part in parts)
+    content = "\n".join(f"\t{part}" for part in parts)
+    return f'<callout icon="⚠️" color="yellow_background">\n{content}\n</callout>'
