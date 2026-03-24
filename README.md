@@ -1,15 +1,15 @@
-# Notion-GitHub Page Sync Action
+# nogisync
 
-This GitHub Action synchronizes markdown files from your repository with Notion pages, maintaining the directory structure as the page hierarchy in Notion. It provides a seamless way to keep your documentation in sync between GitHub and Notion.
+Sync markdown files from a GitHub repository to Notion pages. Directory structure is preserved as a page hierarchy in Notion. Pages are created or updated based on frontmatter titles.
 
 ## Features
 
-- 🔄 Bi-directional synchronization between GitHub markdown files and Notion pages
 - 📁 Preserves directory structure as Notion page hierarchy
-- 🔍 Supports multiple directory monitoring
-- 🎯 Selective synchronization based on file patterns
-- 📝 Maintains markdown formatting compatibility
-- 🔒 Secure handling of Notion API credentials
+- 📂 Supports multiple directories via YAML list, newline, or comma separation
+- 📝 Extracts page titles from YAML frontmatter
+- 🔗 Adds provenance callouts linking back to the source file on GitHub
+- ⚡ Parallel syncing with configurable worker count
+- 🔀 Two sync methods: `markdown` (Notion markdown API) or `blocks` (convert to Notion blocks)
 
 ## Prerequisites
 
@@ -28,27 +28,52 @@ This GitHub Action synchronizes markdown files from your repository with Notion 
 
 ## Usage
 
+### GitHub Action
+
 Add the following workflow to your repository (e.g., `.github/workflows/notion-sync.yml`):
 
 ```yaml
 name: Sync to Notion
 on:
   push:
+    branches: [main]
     paths:
-      - '**.md'
+      - 'docs/**'
   workflow_dispatch:
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - name: Notion GitHub Page Sync
-        uses: fencer-security/notion-github-page-sync-action@v1
+      - uses: actions/checkout@v4
+      - name: Sync docs to Notion
+        uses: Fencer-Security/nogisync@v1.2.0
         with:
           notion_api_key: ${{ secrets.NOTION_API_KEY }}
-          notion_parent_page_id: 'your-parent-page-id'
-          docs_path: 'docs/'  # Directory containing markdown files
+          notion_parent_page_id: ${{ secrets.NOTION_PARENT_PAGE_ID }}
+          docs_path: 'docs/'
+```
+
+Multiple directories can be synced using a YAML list:
+
+```yaml
+          docs_path:
+            - docs/
+            - guides/
+```
+
+### CLI
+
+nogisync can also be used directly from the command line:
+
+```bash
+nogisync --token $NOTION_API_KEY --parent-page-id $PAGE_ID --path docs/
+```
+
+Multiple directories:
+
+```bash
+nogisync --token $NOTION_API_KEY --parent-page-id $PAGE_ID --path "docs/,guides/"
 ```
 
 ## Configuration Options
@@ -57,9 +82,23 @@ jobs:
 |-------|-------------|----------|---------|
 | `notion_api_key` | Notion API key for authentication | Yes | - |
 | `notion_parent_page_id` | ID of the parent page in Notion | Yes | - |
-| `docs_path` | Path to directory containing markdown files | No | `.` |
-| `sync_method` | Sync method: `blocks` (convert to Notion blocks) or `markdown` (use Notion markdown API) | No | `blocks` |
+| `docs_path` | Path(s) to directories containing markdown files (YAML list, newline-separated, or comma-separated) | Yes | - |
+| `sync_method` | Sync method: `markdown` (Notion markdown API) or `blocks` (convert to Notion blocks) | No | `markdown` |
 | `fail_on_error` | Fail the action if any page fails to sync | No | `false` |
+
+### Frontmatter
+
+Pages use YAML frontmatter to set the Notion page title:
+
+```markdown
+---
+title: My Page Title
+---
+
+# Content starts here
+```
+
+If no frontmatter is present, the filename is used as the title (e.g., `getting-started.md` becomes "Getting Started").
 
 ## Example Directory Structure
 
@@ -87,14 +126,6 @@ Parent Page
 └── README
 ```
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Support
-
-If you encounter any issues or have questions, please file an issue on the GitHub repository. 
