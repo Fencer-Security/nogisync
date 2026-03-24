@@ -61,7 +61,7 @@ def sync_file(
     provenance: bool,
     provenance_source_url: str | None,
     provenance_timestamp: bool,
-    sync_method: str = "blocks",
+    sync_method: str = "markdown",
     markdown_client=None,
 ) -> None:
     """Sync a single markdown file to Notion."""
@@ -112,8 +112,8 @@ def sync_file(
 @click.option(
     "--path",
     "-p",
-    type=click.Path(exists=True, file_okay=False, readable=True, resolve_path=True, path_type=Path),
-    help="Path to the markdown files",
+    type=str,
+    help="Path(s) to directories containing markdown files (comma-separated for multiple)",
 )
 @click.option(
     "--provenance/--no-provenance",
@@ -134,7 +134,7 @@ def sync_file(
 @click.option(
     "--sync-method",
     type=click.Choice(["blocks", "markdown"], case_sensitive=False),
-    default="blocks",
+    default="markdown",
     help="Sync method: 'blocks' (convert to Notion blocks) or 'markdown' (use Notion markdown API)",
 )
 @click.option(
@@ -152,7 +152,7 @@ def sync_file(
 def main(
     token: str,
     parent_page_id: str,
-    path: Path,
+    path: str,
     provenance: bool,
     provenance_source_url: str | None,
     provenance_timestamp: bool,
@@ -165,8 +165,16 @@ def main(
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
-    markdown_files = list(Path(path).rglob("*.md"))
-    logger.info("Found %d markdown files to sync", len(markdown_files))
+    # Resolve paths (comma-separated for multiple directories)
+    paths = resolve_paths(path)
+
+    # Collect markdown files from all paths, tracking each file's base directory
+    file_entries: list[tuple[Path, Path]] = []
+    for base_path in paths:
+        for md_file in base_path.rglob("*.md"):
+            file_entries.append((md_file, base_path))
+
+    logger.info("Found %d markdown files to sync across %d directories", len(file_entries), len(paths))
     start = time.monotonic()
 
     client = notion.get_notion_client(token)
@@ -174,26 +182,28 @@ def main(
 
     # Pre-resolve directory hierarchies sequentially (they depend on parent IDs)
     hierarchy_cache: dict[str, str] = {}
-    for md_file in markdown_files:
-        relative_path = md_file.relative_to(path)
+    for md_file, base_path in file_entries:
+        relative_path = md_file.relative_to(base_path)
         process_page_hierarchy(client, parent_page_id, relative_path, hierarchy_cache)
 
     # Build a map of each file to its resolved parent page ID
     file_parent_ids: dict[Path, str] = {}
-    for md_file in markdown_files:
-        relative_path = md_file.relative_to(path)
+    for md_file, base_path in file_entries:
+        relative_path = md_file.relative_to(base_path)
         dir_key = str(relative_path.parent)
         file_parent_ids[md_file] = hierarchy_cache.get(dir_key, parent_page_id)
 
     # Sync files in parallel
     failed = []
+    # Build a lookup from md_file → base_path for error reporting
+    file_base_paths = {md_file: base_path for md_file, base_path in file_entries}
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(
                 sync_file,
                 client,
                 md_file,
-                path,
+                base_path,
                 file_parent_ids[md_file],
                 provenance,
                 provenance_source_url,
@@ -201,21 +211,74 @@ def main(
                 sync_method,
                 markdown_client,
             ): md_file
-            for md_file in markdown_files
+            for md_file, base_path in file_entries
         }
         for future in as_completed(futures):
             md_file = futures[future]
             try:
                 future.result()
             except Exception:
-                logger.exception("Failed to sync %s", md_file.relative_to(path))
+                logger.exception("Failed to sync %s", md_file.relative_to(file_base_paths[md_file]))
                 failed.append(md_file)
 
     elapsed = time.monotonic() - start
-    logger.info("Sync complete: %d files in %.1fs (%d failed)", len(markdown_files), elapsed, len(failed))
+    logger.info("Sync complete: %d files in %.1fs (%d failed)", len(file_entries), elapsed, len(failed))
 
     if failed and fail_on_error:
         raise SystemExit(1)
+
+
+def resolve_paths(path_str: str) -> list[Path]:
+    """Parse path string into resolved Path objects.
+
+    Supports multiple formats for GitHub Actions compatibility:
+
+        # Single path
+        docs_path: docs/
+
+        # YAML list (serialized as JSON array by GitHub Actions)
+        docs_path:
+          - docs/
+          - guides/
+
+        # Multiline string with YAML-style bullets
+        docs_path: |
+          - docs/
+          - guides/
+
+        # Newline-separated
+        docs_path: |
+          docs/
+          guides/
+
+        # Comma-separated
+        docs_path: 'docs/,guides/'
+    """
+    stripped = path_str.strip()
+
+    # Handle JSON array format: ["docs/", "guides/"]
+    if stripped.startswith("["):
+        try:
+            import json
+
+            parsed = json.loads(stripped)
+            raw_paths = [str(p).strip() for p in parsed if str(p).strip()] if isinstance(parsed, list) else [stripped]
+        except json.JSONDecodeError, ValueError:
+            raw_paths = [stripped]
+    else:
+        # Split on commas and newlines, strip YAML list bullet prefixes
+        raw_paths = [re.sub(r"^-\s+", "", p.strip()) for p in re.split(r"[,\n]", stripped) if p.strip()]
+    if not raw_paths:
+        raise click.BadParameter("At least one path is required", param_hint="'--path'")
+    resolved = []
+    for raw in raw_paths:
+        p = Path(raw).resolve()
+        if not p.exists():
+            raise click.BadParameter(f"Path does not exist: {raw}", param_hint="'--path'")
+        if not p.is_dir():
+            raise click.BadParameter(f"Path is not a directory: {raw}", param_hint="'--path'")
+        resolved.append(p)
+    return resolved
 
 
 _FRONTMATTER_RE = re.compile(r"^\s*(?:---|\+\+\+)(.*?)(?:---|\+\+\+)\s*(.+)$", re.DOTALL)

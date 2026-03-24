@@ -10,7 +10,7 @@ inputs:
     description: 'Notion integration token'
     required: true
   docs_path:
-    description: 'Directory containing the markdown files to sync'
+    description: 'Directory containing the markdown files to sync (YAML list, newline-separated, or comma-separated for multiple directories)'
     required: true
   notion_parent_page_id:
     description: 'Notion parent page id'
@@ -18,7 +18,7 @@ inputs:
   sync_method:
     description: "Sync method: 'blocks' (convert to Notion blocks) or 'markdown' (use Notion markdown API)"
     required: false
-    default: 'blocks'
+    default: 'markdown'
   fail_on_error:
     description: 'Fail the action if any page fails to sync'
     required: false

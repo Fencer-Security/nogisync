@@ -2,9 +2,18 @@ from pathlib import Path
 from unittest import TestCase
 from unittest.mock import MagicMock, patch
 
+import click
 from click.testing import CliRunner
 
-from nogisync.cli import get_content, get_title, main, process_page_hierarchy, read_frontmatter, sync_file
+from nogisync.cli import (
+    get_content,
+    get_title,
+    main,
+    process_page_hierarchy,
+    read_frontmatter,
+    resolve_paths,
+    sync_file,
+)
 
 
 class TestGetTitle(TestCase):
@@ -53,6 +62,84 @@ class TestReadFrontmatter(TestCase):
             Path("test.md").write_text("---\n: invalid: yaml: {{{\n---\nBody")
             with self.assertRaises(yaml.YAMLError):
                 read_frontmatter(Path("test.md"))
+
+
+class TestResolvePaths(TestCase):
+    def test_single_path(self):
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            paths = resolve_paths("docs")
+            self.assertEqual(len(paths), 1)
+
+    def test_comma_separated_paths(self):
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("guides").mkdir()
+            paths = resolve_paths("docs,guides")
+            self.assertEqual(len(paths), 2)
+
+    def test_comma_separated_with_spaces(self):
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("guides").mkdir()
+            paths = resolve_paths("docs, guides")
+            self.assertEqual(len(paths), 2)
+
+    def test_newline_separated_paths(self):
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("guides").mkdir()
+            paths = resolve_paths("docs\nguides\n")
+            self.assertEqual(len(paths), 2)
+
+    def test_mixed_comma_and_newline(self):
+        with CliRunner().isolated_filesystem():
+            Path("a").mkdir()
+            Path("b").mkdir()
+            Path("c").mkdir()
+            paths = resolve_paths("a,b\nc")
+            self.assertEqual(len(paths), 3)
+
+    def test_json_array_format(self):
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("guides").mkdir()
+            paths = resolve_paths('["docs", "guides"]')
+            self.assertEqual(len(paths), 2)
+
+    def test_yaml_bullet_list(self):
+        with CliRunner().isolated_filesystem():
+            Path("docs").mkdir()
+            Path("guides").mkdir()
+            paths = resolve_paths("- docs\n- guides")
+            self.assertEqual(len(paths), 2)
+
+    def test_json_non_list_falls_back(self):
+        with CliRunner().isolated_filesystem():
+            # JSON parses as a dict, not a list — treated as raw path string
+            with self.assertRaises(click.BadParameter):
+                resolve_paths('{"key": "value"}')
+
+    def test_invalid_json_with_bracket_prefix(self):
+        with CliRunner().isolated_filesystem():
+            Path("[notjson").mkdir()
+            paths = resolve_paths("[notjson")
+            self.assertEqual(len(paths), 1)
+
+    def test_file_path_raises(self):
+        with CliRunner().isolated_filesystem():
+            Path("afile.txt").write_text("hi")
+            with self.assertRaises(click.BadParameter):
+                resolve_paths("afile.txt")
+
+    def test_nonexistent_path_raises(self):
+        with CliRunner().isolated_filesystem():
+            with self.assertRaises(click.BadParameter):
+                resolve_paths("nonexistent")
+
+    def test_empty_path_raises(self):
+        with self.assertRaises(click.BadParameter):
+            resolve_paths("")
 
 
 class TestProcessPageHierarchy(TestCase):
@@ -126,7 +213,9 @@ class TestSyncFile(TestCase):
         with CliRunner().isolated_filesystem():
             Path("docs").mkdir()
             Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nContent")
-            sync_file(MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True)
+            sync_file(
+                MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True, sync_method="blocks"
+            )
 
         mock_notion.create_notion_page.assert_called_once()
 
@@ -137,7 +226,9 @@ class TestSyncFile(TestCase):
         with CliRunner().isolated_filesystem():
             Path("docs").mkdir()
             Path("docs/test.md").write_text("---\ntitle: Test Doc\n---\nUpdated content")
-            sync_file(MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True)
+            sync_file(
+                MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True, sync_method="blocks"
+            )
 
         mock_notion.update_notion_page.assert_called_once()
 
@@ -149,7 +240,9 @@ class TestSyncFile(TestCase):
         with CliRunner().isolated_filesystem():
             Path("docs").mkdir()
             Path("docs/test.md").write_text("# No frontmatter\nJust content")
-            sync_file(MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True)
+            sync_file(
+                MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True, sync_method="blocks"
+            )
 
         mock_notion.create_notion_page.assert_called_once()
 
@@ -161,7 +254,9 @@ class TestSyncFile(TestCase):
         with CliRunner().isolated_filesystem():
             Path("docs").mkdir()
             Path("docs/test.md").write_text("---\n: invalid: yaml: {{{\n---\nBody content")
-            sync_file(MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True)
+            sync_file(
+                MagicMock(), Path("docs/test.md"), Path("docs"), "parent-id", True, None, True, sync_method="blocks"
+            )
 
         mock_notion.create_notion_page.assert_called_once()
 
@@ -267,8 +362,9 @@ class TestMain(TestCase):
     def test_syncs_files_in_parallel(self, mock_notion):
         runner = CliRunner()
         mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.get_notion_markdown_client.return_value = MagicMock()
         mock_notion.find_notion_page.return_value = None
-        mock_notion.create_notion_page.return_value = {"id": "new-page"}
+        mock_notion.create_notion_page_markdown.return_value = {"id": "new-page"}
 
         with runner.isolated_filesystem():
             Path("docs").mkdir()
@@ -277,7 +373,7 @@ class TestMain(TestCase):
             result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
 
         self.assertEqual(result.exit_code, 0)
-        self.assertEqual(mock_notion.create_notion_page.call_count, 2)
+        self.assertEqual(mock_notion.create_notion_page_markdown.call_count, 2)
 
     @patch("nogisync.cli.notion")
     def test_with_subdirectories(self, mock_notion):
@@ -330,11 +426,12 @@ class TestMain(TestCase):
         mock_notion.create_notion_page.assert_not_called()
 
     @patch("nogisync.cli.notion")
-    def test_default_sync_method_is_blocks(self, mock_notion):
+    def test_default_sync_method_is_markdown(self, mock_notion):
         runner = CliRunner()
         mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.get_notion_markdown_client.return_value = MagicMock()
         mock_notion.find_notion_page.return_value = None
-        mock_notion.create_notion_page.return_value = {"id": "new-page"}
+        mock_notion.create_notion_page_markdown.return_value = {"id": "new-page"}
 
         with runner.isolated_filesystem():
             Path("docs").mkdir()
@@ -342,8 +439,26 @@ class TestMain(TestCase):
             result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs"])
 
         self.assertEqual(result.exit_code, 0)
-        mock_notion.create_notion_page.assert_called_once()
-        mock_notion.create_notion_page_markdown.assert_not_called()
+        mock_notion.create_notion_page_markdown.assert_called_once()
+        mock_notion.create_notion_page.assert_not_called()
+
+    @patch("nogisync.cli.notion")
+    def test_multiple_directories(self, mock_notion):
+        runner = CliRunner()
+        mock_notion.get_notion_client.return_value = MagicMock()
+        mock_notion.get_notion_markdown_client.return_value = MagicMock()
+        mock_notion.find_notion_page.return_value = None
+        mock_notion.create_notion_page_markdown.return_value = {"id": "new-page"}
+
+        with runner.isolated_filesystem():
+            Path("docs").mkdir()
+            Path("guides").mkdir()
+            Path("docs/a.md").write_text("---\ntitle: Doc A\n---\nContent A")
+            Path("guides/b.md").write_text("---\ntitle: Guide B\n---\nContent B")
+            result = runner.invoke(main, ["-t", "fake-token", "-parentid", "parent-id", "-p", "docs,guides"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertEqual(mock_notion.create_notion_page_markdown.call_count, 2)
 
     @patch("nogisync.cli.notion")
     def test_custom_workers(self, mock_notion):
