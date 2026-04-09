@@ -47,6 +47,12 @@ jobs:
                   prek auto-update --freeze 2>&1 | tee -a update.log
                   printf "\`\`\`\n" >> update.log
 
+            - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # 3.0.0
+              id: generate-token
+              with:
+                  app-id: ${{ secrets.APP_ID }}
+                  private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
             - name: Create Pull Request
               uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v7.0.8
               with:
