@@ -1,0 +1,29 @@
+# Markdownlint configuration for nogisync
+
+# Disable line length - prettier handles wrapping
+MD013: false
+
+# Allow duplicate headings - policies repeat section names like "Purpose", "Scope"
+MD024: false
+
+# Allow multiple top-level headings in the same document
+MD025: false
+
+# Allow trailing punctuation in headings - policies use **bold** in headings
+MD026: false
+
+# Allow inline HTML - some content may use HTML tables or formatting
+MD033: false
+
+# Disable first-line-heading - files start with the policy title already
+MD041: false
+
+# Allow emphasis as heading - policy docs use ***italic bold*** subsection headers
+MD036: false
+
+# Allow blanks around lists to be flexible
+MD032: false
+
+# Match prettier's tabWidth: 4 for nested list indentation
+MD007:
+    indent: 4
