@@ -11,3 +11,22 @@ repos:
       - id: ruff
         args: [--fix]
       - id: ruff-format
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+        - id: trailing-whitespace
+          args: [--markdown-linebreak-ext=md]
+        - id: end-of-file-fixer
+        - id: check-yaml
+        - id: mixed-line-ending
+          args: [--fix=lf]
+        - id: check-merge-conflict
+  - repo: https://github.com/codespell-project/codespell
+    rev: 63c8f8312b7559622c0d82815639671ae42132ac # frozen: v2.4.1
+    hooks:
+        - id: codespell
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.44.0
+    hooks:
+        - id: markdownlint
+          args: [--config, .markdownlint.yaml, --fix]

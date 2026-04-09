@@ -102,7 +102,7 @@ If no frontmatter is present, the filename is used as the title (e.g., `getting-
 
 ## Example Directory Structure
 
-```
+```text
 docs/
 ├── getting-started/
 │   ├── installation.md
@@ -115,7 +115,7 @@ docs/
 
 This will create a corresponding structure in Notion:
 
-```
+```text
 Parent Page
 ├── Getting Started
 │   ├── Installation
