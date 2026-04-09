@@ -5,6 +5,10 @@ on:
     push:
         branches:
           - main
+
+permissions:
+    contents: read
+
 jobs:
     code-style:
         name: Check code style
