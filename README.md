@@ -79,7 +79,7 @@ nogisync --token $NOTION_API_KEY --parent-page-id $PAGE_ID --path "docs/,guides/
 ## Configuration Options
 
 | Input | Description | Required | Default |
-|-------|-------------|----------|---------|
+| ----- | ----------- | -------- | ------- |
 | `notion_api_key` | Notion API key for authentication | Yes | - |
 | `notion_parent_page_id` | ID of the parent page in Notion | Yes | - |
 | `docs_path` | Path(s) to directories containing markdown files (YAML list, newline-separated, or comma-separated) | Yes | - |
