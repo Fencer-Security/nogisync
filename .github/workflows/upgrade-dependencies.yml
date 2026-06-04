@@ -54,6 +54,28 @@ jobs:
                   prek auto-update --freeze 2>&1 | tee -a update.log
                   printf "\`\`\`\n" >> update.log
 
+            - name: Update pinned GitHub Action SHAs
+              continue-on-error: true
+              env:
+                  PINACT_VERSION: 3.10.1
+                  PINACT_SHA256: c5234ff3a636cda47719c73ca33a0183a5f441581455eda8a0726e5030942b69
+              run: |
+                  curl -fsSL -o /tmp/pinact.tar.gz \
+                      "https://github.com/suzuki-shunsuke/pinact/releases/download/v${PINACT_VERSION}/pinact_linux_amd64.tar.gz"
+                  echo "${PINACT_SHA256}  /tmp/pinact.tar.gz" | sha256sum -c -
+                  tar -xzf /tmp/pinact.tar.gz -C /tmp pinact
+                  /tmp/pinact run --update >/tmp/pinact.out 2>&1 || true
+                  printf "\n### GitHub Actions SHAs\n\n" >> update.log
+                  if grep -q '^::notice' /tmp/pinact.out; then
+                      printf "| File | Updated |\n|---|---|\n" >> update.log
+                      sed -nE 's|^::notice file=([^,]+),line=[0-9]+,title=[^:]+::[[:space:]]*(.*)$|\1\x01\2|p' \
+                          /tmp/pinact.out \
+                          | awk -F$'\x01' '{printf "| `%s` | `%s` |\n", $1, $2}' \
+                          >> update.log
+                  else
+                      printf "_No action SHA updates needed._\n" >> update.log
+                  fi
+
             - uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # 3.0.0
               id: generate-token
               with:
@@ -74,5 +96,6 @@ jobs:
                       uv.lock
                       .pre-commit-config.yaml
                       .tool-versions
+                      .github/workflows/*.yml
                   team-reviewers: |
                       engineering
