@@ -47,6 +47,30 @@ jobs:
                       echo "Upgrading uv version in .tool-versions"
                       sed -Ei "s/^uv.*/uv $VERSION_OF_UV/" .tool-versions
                   fi
+
+            - name: Upgrade prek version
+              run: |
+                  export VERSION_OF_PREK=$(prek --version | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+')
+                  export EXISTING_VERSION_OF_PREK=$(grep -Eo '^prek ([0-9]+\.[0-9]+\.[0-9]+)' .tool-versions | cut -d ' ' -f 2)
+
+                  echo "VERSION_OF_PREK: $VERSION_OF_PREK"
+                  echo "EXISTING_VERSION_OF_PREK: $EXISTING_VERSION_OF_PREK"
+
+                  printf -- "- prek: \`%s\`" "$VERSION_OF_PREK" >> update.log
+
+                  if [[ "$VERSION_OF_PREK" != "$EXISTING_VERSION_OF_PREK" ]]; then
+                      printf " (upgrading from \`%s\`)\n" "$EXISTING_VERSION_OF_PREK" >> update.log
+                  else
+                      printf "\n" >> update.log
+                      echo "prek versions match, skipping"
+                      exit 0
+                  fi
+
+                  if ! grep "prek $VERSION_OF_PREK" .tool-versions ; then
+                      echo "Upgrading prek version in .tool-versions"
+                      sed -Ei "s/^prek.*/prek $VERSION_OF_PREK/" .tool-versions
+                  fi
+
             - name: Upgrade Python dependencies
               run: |
                   printf "### Upgraded dependencies\n\n\`\`\`\n" >> update.log
