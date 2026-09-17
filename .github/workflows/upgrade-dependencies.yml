@@ -75,7 +75,7 @@ jobs:
               run: |
                   printf "### Upgraded dependencies\n\n\`\`\`\n" >> update.log
                   uv lock --upgrade 2>&1 | tee -a update.log
-                  prek auto-update --freeze 2>&1 | tee -a update.log
+                  prek update --freeze 2>&1 | tee -a update.log
                   printf "\`\`\`\n" >> update.log
 
             - name: Update pinned GitHub Action SHAs
