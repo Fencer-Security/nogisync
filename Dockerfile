@@ -10,6 +10,11 @@ COPY src/ ./src/
 RUN --mount=type=cache,target=/root/.cache \
     uv sync --locked --no-dev
 
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup && \
+    chown -R appuser:appgroup /code
+
 ENV PATH="/code/.venv/bin:$PATH"
+
+USER appuser
 
 CMD ["nogisync", "--help"]
