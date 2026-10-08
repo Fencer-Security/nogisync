@@ -23,7 +23,7 @@ jobs:
                 cache-dependency-path: |
                     uv.lock
           - name: Run pre-commit hooks
-            uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+            uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
     mypy:
         name: Run mypy
         runs-on: ubuntu-latest
@@ -83,7 +83,7 @@ jobs:
                 file-path: comment.md
                 comment-tag: coverage-comment
           - name: Upload HTML report if check failed.
-            uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+            uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
             if: ${{ failure() }}
             with:
                 name: html-report
